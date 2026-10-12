@@ -1,0 +1,37 @@
+# ── Môi trường & bí mật ─────────────────────────────────────────────────────
+.env
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# ── Dữ liệu & media (không push lên repo) ───────────────────────────────────
+data/
+data_real/
+docs/
+video/
+frames_output/
+output_qrs/
+qr_crops/
+tmp/
+
+# ── Model weights (file lớn, dùng git-lfs hoặc tải thủ công) ─────────────────
+weights/
+wechat_qrcode_models/
+
+# ── Ảnh & video rời ngoài thư mục (output tạm thời) ─────────────────────────
+*.jpg
+*.jpeg
+*.png
+*.mp4
+*.avi
+*.mov
+
+# ── Notebook output (cell outputs, checkpoints) ───────────────────────────────
+.ipynb_checkpoints/
+
+# ── IDE & hệ điều hành ────────────────────────────────────────────────────────
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
