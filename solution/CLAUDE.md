@@ -26,7 +26,10 @@ qr/                      → copy từ production/ (KHÔNG sửa production/ g�
   improved_pipeline.py   → ImprovePipeline
 ui/main_window.py        → bind UI ↔ CameraManager, panel quay/đóng bất đồng bộ
 camera/recording.py      → AVI không nén MVSDK, một file/phiên, trạng thái và disk guard
+camera/conveyor.py       → công thức băng chuyền thuần (exposure tối đa theo tốc độ/mm/px, px/ô, căn dải ROI)
 ```
+
+**Chế độ băng chuyền** (`CameraManager.apply_conveyor_mode(ConveyorSettings)`, nút trong panel Kết quả QR): tắt AE, exposure cố định `t = mờ_px × mm/px ÷ v` (kẹp theo min/max camera), frame speed cao nhất, tùy chọn ROI dải ngang toàn bề rộng (`set_sensor_band`, căn bội 16 — cần kiểm chứng camera thật). `open()` vẫn bật AE như cũ; chế độ băng chuyền phải bấm áp dụng sau khi mở. Nhãn trạng thái hiển thị exposure, vệt mờ ước tính, độ sáng TB và % cháy sáng; khi đang quay/đóng không gọi getter SDK từ GUI thread (dùng cache).
 
 Camera dùng MindVision `mvsdk`: `CameraSdkInit → CameraEnumerateDevice → CameraInit → CameraGetCapability → CameraPlay`. Capture dùng `CameraGetImageBuffer → CameraImageProcess → CameraReleaseImageBuffer`; đóng bằng `CameraStop → CameraUnInit → CameraAlignFree`.
 

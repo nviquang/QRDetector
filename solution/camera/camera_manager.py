@@ -17,6 +17,7 @@ import numpy as np
 
 import mvsdk
 
+from .conveyor import ConveyorSettings, align_band
 from .recording import NativeRecorder, RecordingOptions, RecordingStatus
 
 
@@ -123,6 +124,7 @@ class CameraManager:
         self._stats_at = 0.0
         self._stats_previous = None
         self._lost_baseline = None
+        self._band: tuple[int, int] | None = None   # dải sensor đang đọc (chế độ băng chuyền)
 
     def start_recording(self, options: RecordingOptions) -> bool:
         with self._record_command_lock:
@@ -589,8 +591,80 @@ class CameraManager:
             return False
         resolution = self.capability.pImageSizeDesc[index]
         with self._sdk_lock:
-            return self._set("ImageResolution", index,
-                             mvsdk.CameraSetImageResolution, resolution)
+            ok = self._set("ImageResolution", index,
+                           mvsdk.CameraSetImageResolution, resolution)
+        if ok:
+            self._band = None
+        return ok
+
+    def get_resolution(self) -> tuple[int, int] | None:
+        res = self._get("ImageResolution", mvsdk.CameraGetImageResolution, None)
+        return None if res is None else (int(res.iWidth), int(res.iHeight))
+
+    def set_frame_speed(self, index: int):
+        return self._set("FrameSpeed", index, mvsdk.CameraSetFrameSpeed, int(index))
+
+    def get_frame_speed(self) -> int | None:
+        return self._get("FrameSpeed", mvsdk.CameraGetFrameSpeed, None)
+
+    def frame_speed_names(self) -> list[str]:
+        if self.capability is None:
+            return []
+        return [self.capability.pFrameSpeedDesc[i].GetDescription()
+                for i in range(int(self.capability.iFrameSpeedDesc))]
+
+    def set_sensor_band(self, y: int, height: int) -> bool:
+        """Chỉ đọc dải ngang ``height`` dòng từ ``y`` trên toàn bề rộng sensor (ROI tùy biến).
+
+        Ít dòng hơn → mỗi frame truyền/xử lý nhanh hơn → FPS cao hơn. Offset/kích thước được căn
+        bội 16; cần kiểm chứng trên camera thật nếu SDK từ chối.
+        """
+        if self._configuration_locked() or self.handle is None or self.capability is None:
+            return False
+        sensor = self.capability.sResolutionRange
+        width = int(sensor.iWidthMax)
+        y, height = align_band(y, height, int(sensor.iHeightMax))
+        res = mvsdk.tSdkImageResolution()
+        res.iIndex = 0xFF
+        res.iHOffsetFOV, res.iVOffsetFOV = 0, y
+        res.iWidthFOV, res.iHeightFOV = width, height
+        res.iWidth, res.iHeight = width, height
+        with self._sdk_lock:
+            ok = self._set("ImageResolution", (0, y, width, height),
+                           mvsdk.CameraSetImageResolution, res)
+        if ok:
+            self._band = (y, height)
+        return ok
+
+    @property
+    def sensor_band(self) -> tuple[int, int] | None:
+        return self._band
+
+    def apply_conveyor_mode(self, settings: ConveyorSettings) -> dict | None:
+        """Cấu hình camera cho QR chạy trên băng: tắt AE, exposure cố định giới hạn vệt mờ,
+        tốc độ khung cao nhất, (tùy chọn) chỉ đọc dải băng. Trả về giá trị thực tế đã áp dụng."""
+        if self.handle is None or self.capability is None or self._configuration_locked():
+            return None
+        expose = self.capability.sExposeDesc
+        line_time = self.f_exp_line_time or 1.0
+        lo = expose.uiExposeTimeMin * line_time
+        hi = expose.uiExposeTimeMax * line_time
+        target = settings.exposure_us
+        ok = self.set_ae_state(False)
+        ok = self.set_exposure_time(min(max(target, lo), hi)) and ok
+        speeds = int(getattr(self.capability, "iFrameSpeedDesc", 0) or 0)
+        if settings.max_frame_speed and speeds > 0:
+            ok = self.set_frame_speed(speeds - 1) and ok
+        if settings.band is not None:
+            ok = self.set_sensor_band(*settings.band) and ok
+        elif self._band is not None:
+            ok = self.set_roi(0) and ok           # bỏ dải cũ → về độ phân giải preset đầu (toàn khung)
+        applied = dict(ok=ok, exposure_target_us=target, exposure_us=self.get_exposure_time(),
+                       ae=self.get_ae_state(), frame_speed=self.get_frame_speed(),
+                       resolution=self.get_resolution(), band=self._band)
+        logger.info("conveyor_mode speed_mm_s=%.0f mm_per_px=%.3f max_blur_px=%.2f applied=%r",
+                    settings.speed_mm_s, settings.mm_per_px, settings.max_blur_px, applied)
+        return applied
 
     def save_param(self, slot: int):
         return self._set("SaveParameter", slot,

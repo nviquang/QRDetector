@@ -19,14 +19,16 @@ import numpy as np
 # torch (qua qr/) PHẢI load TRƯỚC PyQt5: nếu import PyQt5 trước, torch
 # fail WinError 1114 (c10.dll) do xung đột DLL trong môi trường Windows.
 from camera.camera_manager import CameraManager
+from camera.conveyor import SPEEDS_MM_S, ConveyorSettings, blur_px
 from camera.recording import RecordingOptions
 from qr import ImprovePipeline
 
 from PyQt5.QtCore import QObject, QSignalBlocker, Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QImage, QPixmap
-from PyQt5.QtWidgets import (QCheckBox, QFileDialog, QGroupBox, QHBoxLayout,
-                             QLabel, QLineEdit, QListWidget, QMainWindow,
-                             QMessageBox, QPushButton, QSpinBox, QVBoxLayout)
+from PyQt5.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog,
+                             QGroupBox, QHBoxLayout, QLabel, QLineEdit,
+                             QListWidget, QMainWindow, QMessageBox, QPushButton,
+                             QSpinBox, QVBoxLayout)
 
 from . import main_window_ui as MainWindowUI
 
@@ -111,7 +113,10 @@ class MainWindow(QMainWindow):
         self._last_detections = []
         self._last_frame: np.ndarray | None = None
         self._latest_qr = ""
-        self._latest_qr_hits = 0
+        self._latest_qr_hits = 0       # số lần đọc liên tiếp (về 0 khi decode trượt) — chọn màu quad
+        self._latest_qr_count = 0      # tổng số lần đọc mã hiện tại — hiển thị (xN)
+        self._latest_qr_at: float | None = None
+        self._latest_qr_clock = ""
 
         # Load UI
         self.ui = MainWindowUI.Ui_MainWindow()
@@ -236,9 +241,117 @@ class MainWindow(QMainWindow):
         row2.addWidget(self.lbl_stat)
         row.addLayout(row2)
         layout.addLayout(row)
+        self._setup_conveyor_rows(layout)
 
         self.lst_history = QListWidget(self.qr_group)
         layout.addWidget(self.lst_history)
+
+    def _setup_conveyor_rows(self, layout):
+        """Chế độ băng chuyền: tắt AE, exposure theo tốc độ băng, FPS cao, tùy chọn chỉ đọc dải băng."""
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Băng:"))
+        self.cbx_conveyor_speed = QComboBox()
+        for speed in SPEEDS_MM_S:
+            self.cbx_conveyor_speed.addItem("{:.0f} cm/s".format(speed / 10), speed)
+        self.cbx_conveyor_speed.setCurrentIndex(len(SPEEDS_MM_S) - 1)
+        row.addWidget(self.cbx_conveyor_speed)
+        row.addWidget(QLabel("mm/px:"))
+        self.spin_mm_per_px = QDoubleSpinBox()
+        self.spin_mm_per_px.setRange(0.05, 3.0)
+        self.spin_mm_per_px.setDecimals(3)
+        self.spin_mm_per_px.setSingleStep(0.01)
+        self.spin_mm_per_px.setValue(0.43)
+        self.spin_mm_per_px.setToolTip("Đo bằng thước đặt trên băng: chiều dài (mm) ÷ số pixel.")
+        row.addWidget(self.spin_mm_per_px)
+        row.addWidget(QLabel("Mờ ≤ px:"))
+        self.spin_max_blur = QDoubleSpinBox()
+        self.spin_max_blur.setRange(0.25, 5.0)
+        self.spin_max_blur.setSingleStep(0.25)
+        self.spin_max_blur.setValue(1.0)
+        row.addWidget(self.spin_max_blur)
+        row.addStretch(1)
+        layout.addLayout(row)
+
+        row = QHBoxLayout()
+        self.cbx_conveyor_band = QCheckBox("Chỉ đọc dải y:")
+        self.cbx_conveyor_band.setToolTip("ROI sensor: chỉ đọc các dòng chứa băng → FPS cao hơn.")
+        self.spin_band_y = QSpinBox()
+        self.spin_band_y.setRange(0, 4096)
+        self.spin_band_y.setSingleStep(16)
+        self.spin_band_y.setValue(640)
+        self.spin_band_h = QSpinBox()
+        self.spin_band_h.setRange(16, 4096)
+        self.spin_band_h.setSingleStep(16)
+        self.spin_band_h.setValue(768)
+        self.btn_conveyor_apply = QPushButton("Áp dụng chế độ băng chuyền")
+        self.btn_conveyor_apply.clicked.connect(self.on_conveyor_apply)
+        row.addWidget(self.cbx_conveyor_band)
+        row.addWidget(self.spin_band_y)
+        row.addWidget(QLabel("cao:"))
+        row.addWidget(self.spin_band_h)
+        row.addWidget(self.btn_conveyor_apply)
+        row.addStretch(1)
+        layout.addLayout(row)
+
+        self.lbl_conveyor = QLabel("Exposure — | mờ ước tính — | sáng — | cháy —")
+        layout.addWidget(self.lbl_conveyor)
+
+    def conveyor_settings(self) -> ConveyorSettings:
+        band = ((self.spin_band_y.value(), self.spin_band_h.value())
+                if self.cbx_conveyor_band.isChecked() else None)
+        return ConveyorSettings(speed_mm_s=float(self.cbx_conveyor_speed.currentData()),
+                                mm_per_px=self.spin_mm_per_px.value(),
+                                max_blur_px=self.spin_max_blur.value(), band=band)
+
+    def on_conveyor_apply(self):
+        if not self.mgr.handle:
+            self.ui.status_bar.setText("Chưa mở camera.")
+            return
+        applied = self.mgr.apply_conveyor_mode(self.conveyor_settings())
+        if applied is None:
+            self.ui.status_bar.setText("Không áp dụng được (camera đang quay hoặc đang đóng).")
+            return
+        self.ui_init_param()
+        names = self.mgr.frame_speed_names()
+        speed = applied["frame_speed"]
+        speed_text = names[speed] if speed is not None and 0 <= speed < len(names) else speed
+        self.ui.status_bar.setText(
+            "{}Băng chuyền: AE tắt, exposure {:.2f} ms (mục tiêu {:.2f}), frame speed {}, khung {}".format(
+                "" if applied["ok"] else "[MỘT SỐ THAM SỐ LỖI — xem log] ",
+                applied["exposure_us"] / 1000, applied["exposure_target_us"] / 1000,
+                speed_text, applied["resolution"]))
+
+    def _update_conveyor_label(self, sdk_busy: bool = False):
+        # Khi đang quay/đóng không gọi getter SDK từ GUI thread — dùng giá trị đọc lần trước.
+        if not sdk_busy:
+            self._exposure_cache = (self.mgr.get_exposure_time(), self.mgr.get_ae_state())
+            if self._exposure_cache[1]:
+                self._sync_ae_widgets(self._exposure_cache[0])
+        exposure_us, auto = getattr(self, "_exposure_cache", (0.0, None))
+        speed = float(self.cbx_conveyor_speed.currentData())
+        text = "Exposure {:.2f} ms ({}) | mờ ước tính {:.1f} px @ {:.0f} cm/s".format(
+            exposure_us / 1000, "AE" if auto else "cố định",
+            blur_px(speed, self.spin_mm_per_px.value(), exposure_us), speed / 10)
+        if self._last_frame is not None:
+            gray = cv2.cvtColor(self._last_frame[::4, ::4], cv2.COLOR_BGR2GRAY)
+            text += " | sáng TB {:.0f} | cháy {:.2f}%".format(
+                float(gray.mean()), float((gray >= 250).mean() * 100))
+        self.lbl_conveyor.setText(text)
+
+    def _sync_ae_widgets(self, exposure_us: float):
+        """Khi AE bật: hiện exposure/gain camera đang tự chọn lên ô Manual (chỉ đọc, không ghi lại SDK)."""
+        widgets = (self.ui.ae_manual_time_hSlider, self.ui.ae_manual_time_ledit,
+                   self.ui.ae_manual_gain_hSlider, self.ui.ae_manual_gain_spinbox)
+        blockers = [QSignalBlocker(widget) for widget in widgets]
+        try:
+            line_time = self.mgr.f_exp_line_time or 1.0
+            self.ui.ae_manual_time_hSlider.setValue(int(exposure_us / line_time))
+            self.ui.ae_manual_time_ledit.setText(str(round(exposure_us / 1000, 3)))
+            gain = self.mgr.get_analog_gain()
+            self.ui.ae_manual_gain_hSlider.setValue(gain)
+            self.ui.ae_manual_gain_spinbox.setValue(gain)
+        finally:
+            del blockers
 
     # ── Ghi video: UI chỉ gửi yêu cầu, capture thread sở hữu recorder ──────────
 
@@ -339,7 +452,8 @@ class MainWindow(QMainWindow):
         self.btn_record_browse.setEnabled(not locked)
         self.spin_record_fps.setEnabled(not locked)
         self.cbx_record_color_diagnostics.setEnabled(not locked)
-        lost = "không xác định" if status.lost_delta is None else str(status.lost_delta)
+        self.btn_conveyor_apply.setEnabled(not locked and self.mgr.handle is not None)
+        lost ="không xác định" if status.lost_delta is None else str(status.lost_delta)
         text = (f"{status.state} | {status.elapsed:.1f}s | "
                 f"gửi ghi: {status.pushed_frames} frame | camera lost: {lost}")
         if status.error:
@@ -588,6 +702,7 @@ class MainWindow(QMainWindow):
         self.ui.label_image.setPixmap(scaled)
 
     def on_fps_show(self):
+        self._render_latest_qr()   # cập nhật "… s trước"
         if self.mgr.handle:
             status = self.mgr.recording_status()
             if status.busy or self._camera_close_thread is not None:
@@ -599,6 +714,8 @@ class MainWindow(QMainWindow):
                     capture - self.read_fps, self.display_fps, self.decode_count))
             self.read_fps = capture
             self.display_fps = 0
+            self._update_conveyor_label(
+                sdk_busy=status.busy or self._camera_close_thread is not None)
 
     # ── Decode callbacks ──────────────────────────────────────────────────────
 
@@ -612,17 +729,36 @@ class MainWindow(QMainWindow):
             return
 
         text = " | ".join(results)
+        clock = time.strftime("%H:%M:%S")
         if text == self._latest_qr:
             self._latest_qr_hits += 1
-            self.lbl_latest.setText("QR mới nhất: {} (x{})".format(
-                text[:60], self._latest_qr_hits))
+            self._latest_qr_count += 1
         else:
             self._latest_qr = text
             self._latest_qr_hits = 1
-            self.lbl_latest.setText("QR mới nhất: {}".format(text[:80]))
-            self.lst_history.insertItem(0, text)
+            self._latest_qr_count = 1
+            self.lst_history.insertItem(0, "{}  {}".format(clock, text))
             while self.lst_history.count() > 50:
                 self.lst_history.takeItem(self.lst_history.count() - 1)
+        self._latest_qr_at = time.monotonic()
+        self._latest_qr_clock = clock
+        self._render_latest_qr()
+
+    def _render_latest_qr(self):
+        """Hiện mã đọc gần nhất kèm giờ đọc và đã bao lâu — tránh nhầm kết quả cũ là mới."""
+        if not self._latest_qr or self._latest_qr_at is None:
+            self.lbl_latest.setText("QR mới nhất: —")
+            return
+        age = time.monotonic() - self._latest_qr_at
+        if age < 1:
+            age_text = "vừa xong"
+        elif age < 60:
+            age_text = "{:.0f} s trước".format(age)
+        else:
+            age_text = "{:.0f} phút trước".format(age // 60)
+        count = " (x{})".format(self._latest_qr_count) if self._latest_qr_count > 1 else ""
+        self.lbl_latest.setText("QR mới nhất: {}{} — {} ({})".format(
+            self._latest_qr[:60], count, self._latest_qr_clock, age_text))
 
     def on_decode_failed(self, msg):
         self.ui.status_bar.setText("Decode lỗi: {}".format(msg[:100]))

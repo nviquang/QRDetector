@@ -35,3 +35,8 @@ wechat_qrcode_models/
 .idea/
 Thumbs.db
 desktop.ini
+
+# ── solution/: dữ liệu sinh ra khi chạy app camera ───────────────────────────
+solution/recordings/
+solution/logs/
+solution/output.*
