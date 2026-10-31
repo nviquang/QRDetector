@@ -69,14 +69,21 @@ def upscale_adaptive(
 
 _CLAHE = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(4, 4))
 
+UPSCALE_PAD_PER_SCALE = 16   # upscale_gray đệm viền (UPSCALE_PAD_PER_SCALE × scale) px mỗi phía
+
+
+def roi_bounds(shape, bbox_xyxy: np.ndarray, margin: float = 0.25) -> tuple[int, int, int, int]:
+    """bbox nới thêm margin × cạnh dài, kẹp trong ảnh — (x1, y1, x2, y2) nguyên."""
+    h, w = shape[:2]
+    x1, y1, x2, y2 = bbox_xyxy
+    m = margin * max(x2 - x1, y2 - y1)
+    return (int(max(0, x1 - m)), int(max(0, y1 - m)),
+            int(min(w, x2 + m)), int(min(h, y2 + m)))
+
 
 def crop_roi_gray(image_bgr: np.ndarray, bbox_xyxy: np.ndarray, margin: float = 0.25) -> np.ndarray:
     """Cắt bbox (nới thêm margin × cạnh dài) từ ảnh gốc độ phân giải đầy đủ, trả về ảnh xám."""
-    h, w = image_bgr.shape[:2]
-    x1, y1, x2, y2 = bbox_xyxy
-    m = margin * max(x2 - x1, y2 - y1)
-    x1, y1 = int(max(0, x1 - m)), int(max(0, y1 - m))
-    x2, y2 = int(min(w, x2 + m)), int(min(h, y2 + m))
+    x1, y1, x2, y2 = roi_bounds(image_bgr.shape, bbox_xyxy, margin)
     roi = image_bgr[y1:y2, x1:x2]
     return cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY) if roi.ndim == 3 else roi
 
@@ -91,7 +98,7 @@ def stretch_contrast(gray: np.ndarray) -> np.ndarray:
     return cv2.normalize(gray, None, 0, 255, cv2.NORM_MINMAX)
 
 
-def upscale_gray(gray: np.ndarray, scale: int, pad_per_scale: int = 16) -> np.ndarray:
+def upscale_gray(gray: np.ndarray, scale: int, pad_per_scale: int = UPSCALE_PAD_PER_SCALE) -> np.ndarray:
     """Upscale bicubic rồi đệm viền replicate (pad_per_scale × scale px) để giữ Quiet Zone."""
     up = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
     pad = pad_per_scale * scale

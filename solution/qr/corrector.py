@@ -32,13 +32,8 @@ def add_quiet_zone(image_bgr: np.ndarray, pad_px: int = 64, value: int = 255) ->
     )
 
 
-def warp_qr(
-    image_bgr: np.ndarray,
-    detection: Detection,
-    out_size: int = _DEFAULT_SIZE,
-    pad_px: int = 0,
-) -> np.ndarray:
-    """Warp perspective vùng QR về ảnh vuông out_size x out_size (tuỳ chọn đệm Quiet Zone viền trắng)."""
+def warp_matrix(detection: Detection, out_size: int = _DEFAULT_SIZE) -> np.ndarray:
+    """Ma trận perspective đưa quad của detection về hình vuông out_size × out_size."""
     src = _order_points(detection.quad_xy)
     dst = np.array([
         [0, 0],
@@ -46,10 +41,34 @@ def warp_qr(
         [out_size - 1, out_size - 1],
         [0, out_size - 1],
     ], dtype=np.float32)
+    return cv2.getPerspectiveTransform(src, dst)
 
-    M = cv2.getPerspectiveTransform(src, dst)
-    warped = cv2.warpPerspective(image_bgr, M, (out_size, out_size),
+
+def warp_qr(
+    image_bgr: np.ndarray,
+    detection: Detection,
+    out_size: int = _DEFAULT_SIZE,
+    pad_px: int = 0,
+) -> np.ndarray:
+    """Warp perspective vùng QR về ảnh vuông out_size x out_size (tuỳ chọn đệm Quiet Zone viền trắng)."""
+    warped = cv2.warpPerspective(image_bgr, warp_matrix(detection, out_size), (out_size, out_size),
                                  flags=cv2.INTER_LANCZOS4)
     if pad_px > 0:
         return add_quiet_zone(warped, pad_px=pad_px)
     return warped
+
+
+def display_quad(detection: Detection, corners: np.ndarray | None = None) -> np.ndarray:
+    """Quad để VẼ lên màn hình.
+
+    Ưu tiên 4 góc decoder trả về (khớp QR chính xác). Chưa đọc được → hình chữ nhật xoay nhỏ nhất bao
+    mask: padded quad của qrdet khớp trên mask thô (~8×8 điểm cho QR 60px) nên hay thành hình diều /
+    to hơn QR. Không có mask → bbox.
+    """
+    if corners is not None:
+        return np.asarray(corners, np.float32)
+    poly = detection.polygon_xy
+    if poly is not None and len(poly) >= 3:
+        return cv2.boxPoints(cv2.minAreaRect(np.asarray(poly, np.float32))).astype(np.float32)
+    x1, y1, x2, y2 = (float(v) for v in detection.bbox_xyxy)
+    return np.array([[x1, y1], [x2, y1], [x2, y2], [x1, y2]], np.float32)

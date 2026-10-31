@@ -111,12 +111,27 @@ _wechat_cnn_detector = None
 _wechat_cnn_loaded = False
 
 
-def decode_zxing_gray(gray: np.ndarray) -> str | None:
-    """zxing-cpp binarizer LocalAverage (mặc định) — rất nhanh (~1ms) trên ROI đã upscale."""
+def _zxing_corners(barcode) -> np.ndarray:
+    p = barcode.position
+    return np.array([[p.top_left.x, p.top_left.y], [p.top_right.x, p.top_right.y],
+                     [p.bottom_right.x, p.bottom_right.y], [p.bottom_left.x, p.bottom_left.y]],
+                    np.float32)
+
+
+def read_zxing_gray(gray: np.ndarray) -> tuple[str, np.ndarray] | None:
+    """zxing-cpp binarizer LocalAverage — rất nhanh (~1ms) trên ROI đã upscale.
+
+    Trả (nội dung, 4 góc QR (4, 2) trong tọa độ ``gray``) hoặc None.
+    """
     for b in zxingcpp.read_barcodes(gray, formats=zxingcpp.BarcodeFormat.QRCode, try_rotate=True):
         if b.valid and b.text:
-            return b.text
+            return b.text, _zxing_corners(b)
     return None
+
+
+def decode_zxing_gray(gray: np.ndarray) -> str | None:
+    hit = read_zxing_gray(gray)
+    return hit[0] if hit else None
 
 
 def _get_wechat_cnn_detector():
@@ -139,19 +154,27 @@ def _get_wechat_cnn_detector():
     return _wechat_cnn_detector
 
 
-def decode_wechat_gray(gray: np.ndarray, use_cnn: bool = False) -> str | None:
-    """WeChatQRCode một lần (không xoay — WeChat tự xử lý hướng). use_cnn=True dùng CNN + SR."""
+def read_wechat_gray(gray: np.ndarray, use_cnn: bool = False) -> tuple[str, np.ndarray] | None:
+    """WeChatQRCode một lần (không xoay — WeChat tự xử lý hướng). use_cnn=True dùng CNN + SR.
+
+    Trả (nội dung, 4 góc QR (4, 2) trong tọa độ ``gray``) hoặc None.
+    """
     detector = _get_wechat_cnn_detector() if use_cnn else _get_wechat_detector()
     if detector is None:
         return None
     try:
-        texts, _ = detector.detectAndDecode(gray)
+        texts, points = detector.detectAndDecode(gray)
     except Exception:
         return None
-    for t in texts:
-        if t:
-            return t
+    for text, pts in zip(texts, points):
+        if text:
+            return text, np.asarray(pts, np.float32).reshape(4, 2)
     return None
+
+
+def decode_wechat_gray(gray: np.ndarray, use_cnn: bool = False) -> str | None:
+    hit = read_wechat_gray(gray, use_cnn)
+    return hit[0] if hit else None
 
 
 # ── Multi-decoder ─────────────────────────────────────────────────────────────

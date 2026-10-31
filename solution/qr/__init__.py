@@ -16,6 +16,6 @@ if os.name == "nt":
         pass
 
 from .detector import Detection, QRDetector
-from .improved_pipeline import ImprovePipeline
+from .improved_pipeline import Decoded, ImprovePipeline
 
-__all__ = ["Detection", "QRDetector", "ImprovePipeline"]
+__all__ = ["Detection", "QRDetector", "Decoded", "ImprovePipeline"]
