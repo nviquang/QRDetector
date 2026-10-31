@@ -33,6 +33,20 @@ from PyQt5.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog,
 from . import main_window_ui as MainWindowUI
 
 
+def frame_to_qimage(frame_bgr: np.ndarray, max_w: int, max_h: int) -> QImage:
+    """Thu nhỏ bằng OpenCV (INTER_AREA) về khung hiển thị TRƯỚC khi đổi màu — GUI thread không
+    phải xử lý ảnh 5MP ở 30 Hz (tranh CPU với cascade). Không phóng to; khung 0 → giữ nguyên."""
+    h, w = frame_bgr.shape[:2]
+    if max_w > 0 and max_h > 0:
+        scale = min(max_w / w, max_h / h)
+        if scale < 1.0:
+            frame_bgr = cv2.resize(frame_bgr, (max(1, int(w * scale)), max(1, int(h * scale))),
+                                   interpolation=cv2.INTER_AREA)
+    rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+    h, w = rgb.shape[:2]
+    return QImage(rgb.data, w, h, rgb.strides[0], QImage.Format_RGB888).copy()
+
+
 QUAD_MAX_AGE_SEQ = 100   # quad cũ hơn ~2 s (50 fps) thì thôi vẽ — tránh khung "ma" khi QR đã đi qua
 
 
@@ -741,15 +755,7 @@ class MainWindow(QMainWindow):
             thickness = max(2, 2 * frame.shape[1] // max(1, label_w))
             vis = draw_overlays(frame, self._overlays, seq, thickness=thickness)
 
-        rgb = cv2.cvtColor(vis, cv2.COLOR_BGR2RGB)
-        h, w = rgb.shape[:2]
-        qimg = QImage(rgb.data, w, h, rgb.strides[0], QImage.Format_RGB888).copy()
-        pixmap = QPixmap.fromImage(qimg)
-        scaled = pixmap.scaled(
-            self.ui.label_image.width(), self.ui.label_image.height(),
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation)
-        self.ui.label_image.setPixmap(scaled)
+        self.ui.label_image.setPixmap(QPixmap.fromImage(frame_to_qimage(vis, label_w, label_h)))
 
     def on_fps_show(self):
         self._render_latest_qr()   # cập nhật "… s trước"
