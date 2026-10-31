@@ -152,7 +152,10 @@ with patch.dict(sys.modules, {"mvsdk": sdk}):
 CameraManager = manager_module.CameraManager
 
 qr = types.ModuleType("qr")
-qr.ImprovePipeline = type("UnusedPipeline", (), {})
+qr.ImprovePipeline = type("UnusedPipeline", (), {"device": "cpu"})
+qr.PassReader = type("UnusedReader", (), {"__init__": lambda self, *a, **k: None,
+                                           "warmup": lambda self: None,
+                                           "flush": lambda self: []})
 with patch.dict(sys.modules, {"qr": qr, "mvsdk": sdk,
                               "camera.camera_manager": manager_module}):
     window_module = importlib.import_module("ui.main_window")

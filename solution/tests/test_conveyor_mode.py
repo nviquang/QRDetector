@@ -4,8 +4,11 @@ Chạy (từ solution/):  python -m unittest tests.test_conveyor_mode
 """
 from pathlib import Path
 import sys
+import types
 import unittest
 import unittest.mock
+
+import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -206,6 +209,30 @@ class LatestQrLabelTests(unittest.TestCase):
         self.window.on_decode_done([], [])
         self.assertIn("QR mới nhất: A — ", self.window.lbl_latest.text())
         self.assertEqual(self.window._latest_qr_hits, 0)
+
+    def test_stats_label_shows_device_and_stage_timings(self):
+        self.window.on_decode_done(["A"], [])
+        self.window.on_decode_stats({"detect_ms": 61.4, "cascade_ms": 32.0, "skipped": 1})
+        self.assertEqual(self.window.lbl_stat.text(),
+                         "Decode: 1 lần · CPU · detect 61 ms · cascade 32 ms · bỏ qua 1")
+        self.window.on_decode_stats({"detect_ms": 70.0, "cascade_ms": 5.0, "skipped": 0})
+        self.assertEqual(self.window.lbl_stat.text(), "Decode: 1 lần · CPU · detect 70 ms · cascade 5 ms")
+
+    def test_pass_counter_counts_read_and_conflicting(self):
+        self.assertEqual(self.window.lbl_passes.text(), "Lượt QR: 0/0 đọc được · mâu thuẫn 0")
+        T = types.SimpleNamespace
+        self.window.on_passes_done([T(text="A", conflicting=False), T(text=None, conflicting=False),
+                                    T(text="B", conflicting=True)])
+        self.assertEqual(self.window.lbl_passes.text(), "Lượt QR: 2/3 đọc được · mâu thuẫn 1")
+
+    def test_display_tick_submits_frame_with_seq(self):
+        frame = np.zeros((48, 64, 3), np.uint8)
+        self.window.cbx_decode.setChecked(True)
+        self.window.spin_n.setValue(1)
+        with unittest.mock.patch.object(self.window.mgr, "latest_frame", return_value=(frame, 10)), \
+                unittest.mock.patch.object(self.window.worker, "submit", return_value=True) as submit:
+            self.window.on_display_tick()
+        submit.assert_called_once_with(frame, 10)
 
 
 if __name__ == "__main__":

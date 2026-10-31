@@ -3,7 +3,7 @@
 Khác demo gốc:
 - Logic SDK chuyển vào CameraManager (camera/camera_manager.py), UI chỉ bind signal.
 - Frame lấy từ mgr.latest_frame() (BGR np.ndarray) thay vì CaptureThread/Qt.
-- Thêm panel Kết quả QR: decode mỗi N frame trên thread riêng,
+- Thêm panel Kết quả QR: decode mỗi N frame trên thread riêng qua PassReader (theo lượt, GPU nếu có),
   busy → bỏ qua frame (không xếp hàng); vẽ quad + hiển thị text QR.
 """
 
@@ -21,7 +21,7 @@ import numpy as np
 from camera.camera_manager import CameraManager
 from camera.conveyor import SPEEDS_MM_S, ConveyorSettings, blur_px
 from camera.recording import RecordingOptions
-from qr import ImprovePipeline
+from qr import ImprovePipeline, PassReader
 
 from PyQt5.QtCore import QObject, QSignalBlocker, Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QImage, QPixmap
@@ -33,29 +33,55 @@ from PyQt5.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog,
 from . import main_window_ui as MainWindowUI
 
 
+QUAD_MAX_AGE_SEQ = 100   # quad cũ hơn ~2 s (50 fps) thì thôi vẽ — tránh khung "ma" khi QR đã đi qua
+
+
+def draw_overlays(frame_bgr: np.ndarray, overlays, seq: int,
+                  max_age: int = QUAD_MAX_AGE_SEQ, thickness: int = 2) -> np.ndarray:
+    """Vẽ quad lên BẢN SAO frame (trả nguyên frame nếu không có gì để vẽ).
+
+    Kết quả decode đến từ frame cũ hơn frame đang hiển thị (decode mất hàng trăm ms trong khi băng
+    chạy ~700 px/s) → dịch quad theo vận tốc lượt tới ``seq``; bỏ quad của frame khác kích thước
+    (đổi ROI) hoặc quá cũ. Xanh = đã có nội dung, đỏ = chưa đọc được.
+    """
+    shape = frame_bgr.shape[:2]
+    quads = [(o.at(seq, shape, max_age), o.ok) for o in overlays]
+    quads = [(q, ok) for q, ok in quads if q is not None]
+    if not quads:
+        return frame_bgr
+    vis = frame_bgr.copy()
+    for quad, ok in quads:
+        pts = np.round(quad).astype(np.int32).reshape((-1, 1, 2))
+        cv2.polylines(vis, [pts], isClosed=True, color=(0, 255, 0) if ok else (0, 0, 255),
+                      thickness=thickness)
+    return vis
+
+
 # ── Decode worker ─────────────────────────────────────────────────────────────
 
 class DecodeWorker(QObject):
-    """Thread riêng gọi ImprovePipeline.scan(). submit() fail khi đang bận."""
+    """Thread riêng gọi PassReader.process(). submit() fail khi đang bận."""
 
-    done = pyqtSignal(list, list)   # (results, detections)
+    done = pyqtSignal(list, list)   # (results, overlays)
+    stats = pyqtSignal(dict)        # detect_ms, cascade_ms, skipped
+    passes = pyqtSignal(list)       # list[Track] — lượt QR vừa kết thúc
     failed = pyqtSignal(str)
 
     def __init__(self, pipeline: ImprovePipeline, parent=None):
         super().__init__(parent)
-        self._pipeline = pipeline
+        self._reader = PassReader(pipeline)
         self._lock = threading.Lock()
-        self._pending: np.ndarray | None = None
+        self._pending: tuple[np.ndarray, int] | None = None
         self._busy = False
         self._stop = False
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
 
-    def submit(self, frame: np.ndarray) -> bool:
+    def submit(self, frame: np.ndarray, seq: int) -> bool:
         with self._lock:
             if self._busy or self._pending is not None:
                 return False   # đang bận → bỏ qua frame này
-            self._pending = frame
+            self._pending = (frame, seq)
             return True
 
     @property
@@ -66,27 +92,41 @@ class DecodeWorker(QObject):
     def stop(self):
         self._stop = True
         self._thread.join(timeout=5)
+        if self._thread.is_alive():
+            return              # còn đang warm-up/decode dở → không đụng tracker từ thread khác
+        finished = self._reader.flush()
+        if finished:
+            self.passes.emit(finished)
 
     def _loop(self):
+        try:
+            self._reader.warmup()   # lần detect đầu trên GPU mất vài giây — làm ở đây, không chặn UI
+        except Exception as e:
+            self.failed.emit("Warm-up lỗi: {}".format(e))
         while not self._stop:
             with self._lock:
-                if self._pending is None:
-                    frame = None
-                else:
-                    frame = self._pending
-                    self._pending = None
-                    self._busy = True
-            if frame is None:
+                job, self._pending = self._pending, None
+                self._busy = job is not None
+            if job is None:
                 threading.Event().wait(0.02)
                 continue
             try:
-                results, detections = self._pipeline.scan(frame)
-                self.done.emit(results, detections)
-            except Exception as e:  # decode lỗi → bỏ frame này, chạy tiếp
-                self.failed.emit(str(e))
+                self._process(*job)
             finally:
                 with self._lock:
                     self._busy = False
+
+    def _process(self, frame: np.ndarray, seq: int):
+        try:
+            r = self._reader.process(frame, seq)
+        except Exception as e:  # decode lỗi → bỏ frame này, chạy tiếp
+            self.failed.emit(str(e))
+            return
+        self.done.emit(r.results, r.overlays)
+        self.stats.emit({"detect_ms": r.detect_ms, "cascade_ms": r.cascade_ms,
+                         "skipped": r.skipped})
+        if r.finished:
+            self.passes.emit(r.finished)
 
 
 # ── Main window ───────────────────────────────────────────────────────────────
@@ -102,15 +142,21 @@ class MainWindow(QMainWindow):
         self.worker = DecodeWorker(self.pipeline)
         self.worker.done.connect(self.on_decode_done)
         self.worker.failed.connect(self.on_decode_failed)
+        self.worker.stats.connect(self.on_decode_stats)
+        self.worker.passes.connect(self.on_passes_done)
 
         self.cameraList = []
         self.ui_initing = 0
         self.read_fps = 0
         self.display_fps = 0
         self.decode_count = 0
+        self._device_label = "GPU" if str(self.pipeline.device).startswith("cuda") else "CPU"
+        self._passes_total = 0
+        self._passes_read = 0
+        self._passes_conflict = 0
         self._last_seq = -1
         self._last_decode_seq = 0
-        self._last_detections = []
+        self._overlays = []
         self._last_frame: np.ndarray | None = None
         self._latest_qr = ""
         self._latest_qr_hits = 0       # số lần đọc liên tiếp (về 0 khi decode trượt) — chọn màu quad
@@ -236,10 +282,16 @@ class MainWindow(QMainWindow):
         row2 = QHBoxLayout()
         self.lbl_latest = QLabel("QR mới nhất: —", self.qr_group)
         self.lbl_latest.setStyleSheet("font-weight: bold;")
-        self.lbl_stat = QLabel("Decode: 0 lần", self.qr_group)
         row2.addWidget(self.lbl_latest, 1)
-        row2.addWidget(self.lbl_stat)
         row.addLayout(row2)
+
+        row3 = QHBoxLayout()
+        self.lbl_stat = QLabel("Decode: 0 lần", self.qr_group)
+        self.lbl_passes = QLabel("Lượt QR: 0/0 đọc được · mâu thuẫn 0", self.qr_group)
+        row3.addWidget(self.lbl_stat)
+        row3.addStretch(1)
+        row3.addWidget(self.lbl_passes)
+        row.addLayout(row3)
         layout.addLayout(row)
         self._setup_conveyor_rows(layout)
 
@@ -550,7 +602,7 @@ class MainWindow(QMainWindow):
         self.ui.btn_camera_open.setEnabled(True)
         self.ui.btn_camera_close.setEnabled(False)
         self.ui.frame_area.setEnabled(False)
-        self._last_detections = []
+        self._overlays = []
         self.ui.status_bar.setText("")
 
     # ── Init UI param từ camera ───────────────────────────────────────────────
@@ -674,7 +726,7 @@ class MainWindow(QMainWindow):
         if (self.cbx_decode.isChecked()
                 and seq > self._last_seq
                 and seq - self._last_decode_seq >= self.spin_n.value()):
-            if self.worker.submit(frame):
+            if self.worker.submit(frame, seq):
                 self._last_decode_seq = seq
 
         if seq != self._last_seq:
@@ -682,14 +734,12 @@ class MainWindow(QMainWindow):
             self.display_fps += 1
             self._last_frame = frame
 
+        label_w, label_h = self.ui.label_image.width(), self.ui.label_image.height()
         vis = frame
-        if self.cbx_quad.isChecked() and self._last_detections:
-            vis = frame.copy()
-            ok = bool(self._latest_qr_hits)  # chỉ vẽ màu theo lần decode gần nhất
-            for det in self._last_detections:
-                pts = det.quad_xy.astype(np.int32).reshape((-1, 1, 2))
-                color = (0, 255, 0) if ok else (0, 0, 255)
-                cv2.polylines(vis, [pts], isClosed=True, color=color, thickness=2)
+        if self.cbx_quad.isChecked() and self._overlays:
+            # nét dày theo tỷ lệ thu nhỏ để còn thấy sau khi resize về khung hiển thị
+            thickness = max(2, 2 * frame.shape[1] // max(1, label_w))
+            vis = draw_overlays(frame, self._overlays, seq, thickness=thickness)
 
         rgb = cv2.cvtColor(vis, cv2.COLOR_BGR2RGB)
         h, w = rgb.shape[:2]
@@ -719,9 +769,9 @@ class MainWindow(QMainWindow):
 
     # ── Decode callbacks ──────────────────────────────────────────────────────
 
-    def on_decode_done(self, results, detections):
+    def on_decode_done(self, results, overlays):
         self.decode_count += 1
-        self._last_detections = detections
+        self._overlays = overlays
         self.lbl_stat.setText("Decode: {} lần".format(self.decode_count))
 
         if not results:
@@ -759,6 +809,19 @@ class MainWindow(QMainWindow):
         count = " (x{})".format(self._latest_qr_count) if self._latest_qr_count > 1 else ""
         self.lbl_latest.setText("QR mới nhất: {}{} — {} ({})".format(
             self._latest_qr[:60], count, self._latest_qr_clock, age_text))
+
+    def on_decode_stats(self, stats):
+        skipped = " · bỏ qua {}".format(stats["skipped"]) if stats["skipped"] else ""
+        self.lbl_stat.setText("Decode: {} lần · {} · detect {:.0f} ms · cascade {:.0f} ms{}".format(
+            self.decode_count, self._device_label, stats["detect_ms"], stats["cascade_ms"], skipped))
+
+    def on_passes_done(self, tracks):
+        """Đếm lượt QR đi qua (một QR chạy qua khung = một lượt) — read rate thật trên băng."""
+        self._passes_total += len(tracks)
+        self._passes_read += sum(1 for t in tracks if t.text)
+        self._passes_conflict += sum(1 for t in tracks if t.conflicting)
+        self.lbl_passes.setText("Lượt QR: {}/{} đọc được · mâu thuẫn {}".format(
+            self._passes_read, self._passes_total, self._passes_conflict))
 
     def on_decode_failed(self, msg):
         self.ui.status_bar.setText("Decode lỗi: {}".format(msg[:100]))

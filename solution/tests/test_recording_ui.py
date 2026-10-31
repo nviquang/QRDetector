@@ -22,6 +22,8 @@ class RecordingUiTests(unittest.TestCase):
         manager.CameraManager = cls.factory
         qr = types.ModuleType("qr")
         qr.ImprovePipeline = Mock()
+        qr.PassReader = Mock()
+        qr.PassReader.return_value.flush.return_value = []
         spec = importlib.util.spec_from_file_location(
             "ui._recording_test_window", ROOT / "ui" / "main_window.py")
         cls.module = importlib.util.module_from_spec(spec)
