@@ -67,7 +67,8 @@ def main() -> int:
                          f"{len(dets)} detection, kết quả={texts}, {time.perf_counter() - t:.2f}s"))
 
     quad = np.array([[bbox[0], bbox[1]], [bbox[2], bbox[1]], [bbox[2], bbox[3]], [bbox[0], bbox[3]]], np.float32)
-    text = pipeline._decode_one(frame, Detection(bbox_xyxy=bbox, quad_xy=quad, confidence=1.0))
+    hit = pipeline.decode_detection(frame, Detection(bbox_xyxy=bbox, quad_xy=quad, confidence=1.0))
+    text = hit.text if hit else None
     results.append(check("Cascade decode trên Detection dựng tay", text == SYNTH_TEXT, f"kết quả={text}"))
 
     sample_dir = sys.argv[1] if len(sys.argv) > 1 else os.path.join(_REPO, "images")
