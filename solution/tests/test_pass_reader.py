@@ -142,6 +142,15 @@ class PassReaderTests(unittest.TestCase):
         PassReader(pipe).warmup()
         self.assertTrue(pipe.warmed)
 
+    def test_real_decode_spacing_keeps_one_pass(self):
+        # 30 cm/s ≈ 14 px/seq; decode ~0.6 s ở 50 fps → 30 seq giữa hai lần → 420 px > cổng 400 px cũ
+        pipe = FakePipeline(moving(8, step=14 * 30), ["A"])
+        reader = PassReader(pipe)
+        results = [reader.process(IMG, 30 * i) for i in range(8)]
+        self.assertEqual(len(reader.flush()), 1)
+        self.assertGreater(results[2].skipped, 0)
+        self.assertEqual(results[2].overlays[0].velocity, (14.0, 0.0))
+
     # ── overlay ──
 
     def test_overlay_uses_decoder_corners_when_read(self):

@@ -77,6 +77,12 @@ class PassTrackerTests(unittest.TestCase):
         self.assertEqual(matched, {0: 1, 1: 0})
         self.assertEqual(sorted(t.observations for t in tracker.finish()), [2, 2])
 
+    def test_new_track_gate_grows_with_frame_gap(self):
+        tracker = PassTracker(max_gap=100, max_speed_px=20.0)
+        tracker.update(0, [Observation((100, 500), 60, "A")])
+        self.assertEqual(list(tracker.match(30, [Observation((520, 500), 60)])), [0])   # 420 px / 30 frame
+        self.assertEqual(tracker.match(1, [Observation((560, 500), 60)]), {})          # 460 px > 400 + 20 × 1
+
     def test_votes_is_count_of_majority_text(self):
         tracker = PassTracker()
         for i, t in enumerate(["A", None, "A", "B"]):

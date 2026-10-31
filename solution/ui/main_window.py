@@ -164,7 +164,6 @@ class MainWindow(QMainWindow):
         self.read_fps = 0
         self.display_fps = 0
         self.decode_count = 0
-        self._device_label = "GPU" if str(self.pipeline.device).startswith("cuda") else "CPU"
         self._passes_total = 0
         self._passes_read = 0
         self._passes_conflict = 0
@@ -818,8 +817,10 @@ class MainWindow(QMainWindow):
 
     def on_decode_stats(self, stats):
         skipped = " · bỏ qua {}".format(stats["skipped"]) if stats["skipped"] else ""
+        # đọc lại mỗi lần: detector tự chuyển CPU khi CUDA lỗi lúc chạy
+        device = "GPU" if str(self.pipeline.device).startswith("cuda") else "CPU"
         self.lbl_stat.setText("Decode: {} lần · {} · detect {:.0f} ms · cascade {:.0f} ms{}".format(
-            self.decode_count, self._device_label, stats["detect_ms"], stats["cascade_ms"], skipped))
+            self.decode_count, device, stats["detect_ms"], stats["cascade_ms"], skipped))
 
     def on_passes_done(self, tracks):
         """Đếm lượt QR đi qua (một QR chạy qua khung = một lượt) — read rate thật trên băng."""

@@ -46,7 +46,13 @@ class QRDetector:
         self._imgsz = imgsz
         self._device = resolve_device(device, torch.cuda.is_available())
         self._half = half and self._device.startswith("cuda")
-        gpu = torch.cuda.get_device_name(self._device) if self._device.startswith("cuda") else "-"
+        gpu = "-"
+        if self._device.startswith("cuda"):
+            try:
+                gpu = torch.cuda.get_device_name(self._device)
+            except Exception as e:   # driver lỗi dù is_available() → dùng CPU, app vẫn khởi động
+                logger.warning("Không đọc được GPU (%s) — detector chạy CPU", e)
+                self._device, self._half = "cpu", False
         logger.info("qr_detector device=%s half=%s imgsz=%d gpu=%s",
                     self._device, self._half, imgsz, gpu)
 
@@ -58,13 +64,23 @@ class QRDetector:
         """Detect một lần trên ảnh đen — lần đầu trên GPU mất vài giây (nạp kernel CUDA)."""
         self.detect(np.zeros((shape[0], shape[1], 3), np.uint8))
 
-    def detect(self, image_bgr: np.ndarray) -> list[Detection]:
-        """Nhận ảnh BGR, trả về danh sách Detection (có thể rỗng)."""
-        image = _prepare_input(source=image_bgr, is_bgr=True)
-        predictions = self._detector.model.predict(
+    def _predict(self, image):
+        return self._detector.model.predict(
             source=image, conf=self._conf_th, iou=self._detector._nms_iou, imgsz=self._imgsz,
             device=self._device, half=self._half, max_det=100, agnostic_nms=True, verbose=False,
         )
+
+    def detect(self, image_bgr: np.ndarray) -> list[Detection]:
+        """Nhận ảnh BGR, trả về danh sách Detection (có thể rỗng)."""
+        image = _prepare_input(source=image_bgr, is_bgr=True)
+        try:
+            predictions = self._predict(image)
+        except RuntimeError as e:   # CUDA OOM / lỗi driver (GTX 1650 chỉ 4 GB) → chuyển hẳn sang CPU
+            if not self._device.startswith("cuda"):
+                raise
+            logger.warning("Lỗi CUDA khi detect (%s) — chuyển detector sang CPU", e)
+            self._device, self._half = "cpu", False
+            predictions = self._predict(image)
         raw = _yolo_v8_results_to_dict(results=predictions[0], image=image)
         results = []
         for d in raw:

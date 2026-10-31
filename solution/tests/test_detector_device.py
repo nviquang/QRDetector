@@ -43,6 +43,22 @@ class RealDetectorTests(unittest.TestCase):
         det = QRDetector(conf_th=0.3, imgsz=1280, device="cpu").detect(cv2.imread(SAMPLES[0]))[0]
         self.assertGreaterEqual(len(det.polygon_xy), 3)
 
+    def test_cuda_runtime_error_falls_back_to_cpu(self):
+        det = QRDetector(conf_th=0.3, imgsz=1280, device="cpu")
+        det._device = "cuda:0"               # giả lập đang chạy GPU thì CUDA hỏng (OOM / driver)
+        original = det._detector.model.predict
+
+        def predict(**kwargs):
+            if str(kwargs["device"]).startswith("cuda"):
+                raise RuntimeError("CUDA error: out of memory")
+            return original(**kwargs)
+
+        det._detector.model.predict = predict
+        with self.assertLogs("solution.qr", "WARNING"):
+            found = det.detect(cv2.imread(SAMPLES[0]))
+        self.assertEqual(det.device, "cpu")
+        self.assertGreaterEqual(len(found), 1)
+
     @unittest.skipUnless(torch.cuda.is_available(), "máy không có CUDA")
     def test_gpu_finds_same_qrs_as_cpu(self):
         cpu = QRDetector(conf_th=0.3, imgsz=1280, device="cpu")

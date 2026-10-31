@@ -54,15 +54,19 @@ class Track:
 
 
 class PassTracker:
-    def __init__(self, max_gap: int = 5, gate_px: float = 400.0, gate_sizes: float = 3.0):
+    def __init__(self, max_gap: int = 5, gate_px: float = 400.0, gate_sizes: float = 3.0,
+                 max_speed_px: float = 0.0):
         """
-        max_gap:    số frame (theo chỉ số frame gốc) được phép mất dấu trước khi đóng lượt.
-        gate_px:    khoảng cách tối đa (px) từ vị trí dự đoán khi track chưa có vận tốc.
-        gate_sizes: khi đã có vận tốc, cổng = gate_sizes × kích thước QR (dự đoán đã bù chuyển động).
+        max_gap:      số frame (theo chỉ số frame gốc) được phép mất dấu trước khi đóng lượt.
+        gate_px:      khoảng cách tối đa (px) từ vị trí dự đoán khi track chưa có vận tốc.
+        gate_sizes:   khi đã có vận tốc, cổng = gate_sizes × kích thước QR (dự đoán đã bù chuyển động).
+        max_speed_px: tốc độ QR lớn nhất (px / frame) — track chưa có vận tốc được nới cổng thêm
+                      max_speed_px × số frame đã qua (app chỉ decode cách nhau hàng chục seq).
         """
         self.max_gap = max_gap
         self.gate_px = gate_px
         self.gate_sizes = gate_sizes
+        self.max_speed_px = max_speed_px
         self._active: list[Track] = []
         self._next_id = 0
 
@@ -97,7 +101,10 @@ class PassTracker:
         for ti, track in enumerate(tracks):
             px, py = track.predict(frame_idx)
             moving = track.observations > 1
-            gate = self.gate_sizes * max(track.size, 1.0) if moving else self.gate_px
+            if moving:
+                gate = self.gate_sizes * max(track.size, 1.0)
+            else:
+                gate = self.gate_px + self.max_speed_px * (frame_idx - track.last_frame)
             for oi, obs in enumerate(observations):
                 d = float(np.hypot(obs.center[0] - px, obs.center[1] - py))
                 if d <= gate:

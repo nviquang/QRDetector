@@ -64,12 +64,13 @@ class PassReader:
         """
         pipeline:      có ``detect``, ``decode_detection`` và ``warmup`` (ImprovePipeline).
         tracker:       mặc định max_gap=100 theo seq camera (~2 s ở 50 fps) — frame được decode
-                       cách nhau cỡ (thời gian decode × fps) seq.
+                       cách nhau cỡ (thời gian decode × fps) seq; max_speed_px=30 px/seq (~1500 px/s ở
+                       50 fps, đủ cho 30 cm/s ở 0,25 mm/px) để QR mới vẫn ghép được qua khoảng đó.
         min_votes:     số lần đọc giống nhau để coi lượt là đọc chắc.
         recheck_every: số lần bỏ cascade liên tiếp trước khi đọc kiểm tra lại.
         """
         self._pipeline = pipeline
-        self._tracker = tracker if tracker is not None else PassTracker(max_gap=100)
+        self._tracker = tracker if tracker is not None else PassTracker(max_gap=100, max_speed_px=30.0)
         self._min_votes = min_votes
         self._recheck_every = recheck_every
         self._skips: dict[int, int] = {}         # track_id → số lần bỏ cascade liên tiếp

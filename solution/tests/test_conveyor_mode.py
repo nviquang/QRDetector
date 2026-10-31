@@ -218,6 +218,14 @@ class LatestQrLabelTests(unittest.TestCase):
         self.window.on_decode_stats({"detect_ms": 70.0, "cascade_ms": 5.0, "skipped": 0})
         self.assertEqual(self.window.lbl_stat.text(), "Decode: 1 lần · CPU · detect 70 ms · cascade 5 ms")
 
+    def test_stats_label_follows_device_fallback(self):
+        self.window.pipeline.device = "cuda:0"
+        self.window.on_decode_stats({"detect_ms": 50.0, "cascade_ms": 5.0, "skipped": 0})
+        self.assertIn(" · GPU · ", self.window.lbl_stat.text())
+        self.window.pipeline.device = "cpu"          # CUDA lỗi → detector tự chuyển CPU
+        self.window.on_decode_stats({"detect_ms": 500.0, "cascade_ms": 5.0, "skipped": 0})
+        self.assertIn(" · CPU · ", self.window.lbl_stat.text())
+
     def test_pass_counter_counts_read_and_conflicting(self):
         self.assertEqual(self.window.lbl_passes.text(), "Lượt QR: 0/0 đọc được · mâu thuẫn 0")
         T = types.SimpleNamespace
