@@ -17,5 +17,7 @@ if os.name == "nt":
 
 from .detector import Detection, QRDetector
 from .improved_pipeline import Decoded, ImprovePipeline
+from .pass_reader import FrameResult, Overlay, PassReader
 
-__all__ = ["Detection", "QRDetector", "Decoded", "ImprovePipeline"]
+__all__ = ["Detection", "QRDetector", "Decoded", "ImprovePipeline",
+           "FrameResult", "Overlay", "PassReader"]
