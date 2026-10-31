@@ -46,6 +46,19 @@ pip install PyQt5 numpy opencv-contrib-python pillow pyzbar zxing-cpp qrdet torc
 
 **pyzbar trên Windows:** nếu thiếu ZBar DLL, cài `pip install zbar-py` hoặc đặt `libzbar-64.dll` cạnh package `pyzbar`.
 
+### GPU NVIDIA (khuyến nghị)
+
+Detect QR (YOLO) chạy trên GPU NVIDIA nếu torch có CUDA; không có CUDA thì tự chạy CPU (chậm hơn nhiều).
+Máy lab: GTX 1650 4 GB, driver ≥ 560. Thay torch bản CPU bằng bản CUDA 12.6 (~2,6 GB):
+
+```bash
+.venv\Scripts\python.exe -m pip install "torch==2.14.1+cu126" "torchvision==0.29.1+cu126" --index-url https://download.pytorch.org/whl/cu126
+.venv\Scripts\python.exe -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+```
+
+Quay lại bản CPU: cùng lệnh với `+cpu` và `--index-url https://download.pytorch.org/whl/cpu`.
+Thiết bị đang dùng hiện trên nhãn "Decode" (GPU/CPU) và trong log (`qr_detector device=…`).
+
 ### Chạy
 
 ```bash
