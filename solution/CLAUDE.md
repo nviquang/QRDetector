@@ -13,7 +13,7 @@ python main.py
 ```
 
 Cần driver/runtime MindVision tương ứng kiến trúc Python (`MVCAMSDK_X64.dll` cho 64-bit). Test pipeline offline không cần camera:
-`python tests/test_improve_pipeline.py` và `python tests/test_small_qr.py`
+`python tests/test_improve_pipeline.py` và `python tests/test_small_qr.py`, và `python tests/bench_decode.py [--device cpu] [--band Y H] [--half] [--video …]` để đo tốc độ
 
 ## Kiến trúc
 
@@ -24,6 +24,8 @@ camera/camera_manager.py → lifecycle, tham số, capture thread → latest_fra
 qr/                      → copy từ production/ (KHÔNG sửa production/ gốc)
   detector/corrector/preprocessor/decoder.py
   improved_pipeline.py   → ImprovePipeline
+  tracker.py             → PassTracker: gom detection qua frame thành lượt (copy từ offline/, thêm match())
+  pass_reader.py         → PassReader: detect → ghép lượt → bỏ cascade QR đã đọc chắc (≥2 phiếu, kiểm tra lại mỗi 5 lần) → ms + Overlay
 ui/main_window.py        → bind UI ↔ CameraManager, panel quay/đóng bất đồng bộ
 camera/recording.py      → AVI không nén MVSDK, một file/phiên, trạng thái và disk guard
 camera/conveyor.py       → công thức băng chuyền thuần (exposure tối đa theo tốc độ/mm/px, px/ô, căn dải ROI)
@@ -33,7 +35,11 @@ camera/conveyor.py       → công thức băng chuyền thuần (exposure tối
 
 Camera dùng MindVision `mvsdk`: `CameraSdkInit → CameraEnumerateDevice → CameraInit → CameraGetCapability → CameraPlay`. Capture dùng `CameraGetImageBuffer → CameraImageProcess → CameraReleaseImageBuffer`; đóng bằng `CameraStop → CameraUnInit → CameraAlignFree`.
 
-**Luồng:** capture thread → copy frame sở hữu độc lập, RGB/mono chuyển thành BGR 3 kênh → `latest_frame` (frame cũ bị drop) → mỗi N frame decode một lần → vẽ quad và hiển thị text QR.
+**Luồng:** capture thread → copy frame sở hữu độc lập, RGB/mono chuyển thành BGR 3 kênh → `latest_frame` (frame cũ bị drop) → mỗi N frame `DecodeWorker.submit(frame, seq)` (bận thì bỏ; thread worker warm-up GPU trước) → `PassReader.process` → signal `done` (results + Overlay), `stats` (ms detect/cascade), `passes` (đếm lượt, log `pass_finished`). Hiển thị: `draw_overlays` dịch quad theo vận tốc lượt tới seq hiện tại, bỏ quad cũ >100 seq hoặc khác kích thước frame; `frame_to_qimage` resize OpenCV trước khi đổi màu.
+
+**GPU:** detect chạy CUDA nếu có (`device="auto"`, torch `2.14.1+cu126`, GTX 1650; không có CUDA → CPU + cảnh báo log). FP16 tắt (trên GTX 1650 chậm hơn và lệch kết quả). Đo 31/10: detect 190 ms GPU so với 980 ms CPU toàn khung; dải 2448×768 tổng 336 ms. Sau khi lên GPU, cascade CPU (~200–300 ms) là phần chậm nhất.
+
+**Quad hiển thị:** mỗi bước cascade trả `Decoded(text, corners)` — 4 góc QR quy về ảnh gốc (trừ viền đệm `UPSCALE_PAD_PER_SCALE × scale`, chia scale, cộng gốc ROI; bước warp đi ngược homography). Vẽ bằng `display_quad()`: góc decoder, chưa đọc được thì `minAreaRect(polygon_xy)`. KHÔNG vẽ `padded_quad_xy` (mask YOLO thô ~8×8 điểm cho QR 60px → quad méo tới 45°); `padded_quad_xy` vẫn dùng cho warp.
 
 **Quay video:** `start_recording(RecordingOptions)` / `stop_recording()` chỉ gửi yêu cầu; đọc `recording_status()` để biết kết quả. Capture thread sở hữu InitRecord/PushFrame/StopRecord, dùng RGB8/MONO8 + header sau ISP trước BGR/overlay, không lấy từ latest_frame. Snapshot không giữ SDK lock. Giữ `native_open` độc lập với ERROR: chưa finalize thì không UnInit/free/reopen. Mỗi phiên khởi tạo thành công ghi một `video.avi` trong thư mục timestamp + UUID riêng, không tự chia file/dừng theo dung lượng video; giữ b2GLimit=False (SDK chưa triển khai tự chia). Khả năng AVI >4 GiB phụ thuộc DLL, phải kiểm chứng camera thật; vẫn giữ disk guard và dừng khi có lỗi. Đường dẫn phải encode GBK. Camera configuration bị khóa khi ghi. Test mock không chứng minh không mất frame hoặc AVI thật đúng thời lượng.
 

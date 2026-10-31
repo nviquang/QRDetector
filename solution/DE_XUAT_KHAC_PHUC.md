@@ -94,6 +94,24 @@ Hiện tại `ImprovePipeline` chạy YOLO (qrdet) với `imgsz=1280` trên toà
 
 **Tiêu chí đạt:** ≥5 lần thử decode cho mỗi QR trong một lượt đi qua ở 30 cm/s, và UI không bị giật.
 
+### Kết quả đo sau khi sửa (bench_decode.py, GTX 1650, 31/10/2026)
+
+| Cấu hình | Thiết bị | detect mean | cascade mean | tổng mean / p95 | frame đọc được |
+|---|---|---|---|---|---|
+| Toàn khung 2448×2048 | CPU | 980 ms | 363 ms | 1344 / 3271 ms | 12/14 |
+| Toàn khung 2448×2048 | GPU | 190 ms | 230 ms | 420 / 798 ms | 12/14 |
+| Dải 2448×768 (y=1024) | CPU | 487 ms | 318 ms | 805 / 2378 ms | 9/14* |
+| Dải 2448×768 (y=1024) | GPU | 131 ms | 205 ms | 336 / 584 ms | 9/14* |
+| Dải, FP16 | GPU | 259 ms | 168 ms | 428 / 692 ms | 11/14 |
+| Video 20/10 (cảnh tĩnh, every 10, 6 frame) | GPU | 188 ms | 307 ms | 495 / 551 ms | 0 (bỏ cascade 0) |
+
+\* Dải y=1024..1792 không chứa các QR ở y≈1914–1940.
+
+- Detect trên GPU nhanh hơn CPU **5,2 lần** (toàn khung) và giữ nguyên số QR đọc được. Chế độ dải trên GPU đạt **336 ms/frame**, tức khoảng 10 lần thử/lượt với FOV hiện tại (3,4 s) và khoảng 5–6 lần với 0,25 mm/px (1,96 s). Đạt mục tiêu ≥5.
+- **FP16 không giữ**: trên GTX 1650 chậm hơn FP32 (259 ms so với 131 ms) và cho kết quả khác (21 so với 22 detection).
+- Sau khi detect lên GPU, **cascade trên CPU (~200–300 ms) là phần chậm nhất**. Phần bỏ cascade cho QR đã đọc chắc (PassReader) chỉ phát huy khi QR nằm trong khung qua nhiều frame; chưa đo được vì hai video 20/10 là cảnh tĩnh không đọc được QR. Cần quay video băng chạy (mục 4).
+- Quad hiển thị: lấy từ góc decoder, hoặc minAreaRect của mask, và bù vận tốc lượt. Quad dùng cho warp chưa đổi.
+
 ---
 
 ## 4. Đo lường trên băng thật — điều kiện để biết các mục trên có hiệu quả
