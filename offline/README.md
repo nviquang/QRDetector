@@ -3,9 +3,14 @@
 App PyQt5 dùng **cùng thuật toán với `solution/`** (`ImprovePipeline`, không Real-ESRGAN):
 
 ```
-Ảnh/frame BGR → qrdet (YOLOv8) detect → warp 512 + Quiet Zone 64 → decode_parallel
-              → fallback [Gốc, Laplacian, Unsharp] → upscale 2x + Otsu + Quiet Zone → decode lại
+Ảnh/frame BGR → qrdet (YOLOv8) detect, imgsz=1280 (giữ được QR nhỏ ~60px trên frame 2448×2048)
+              → cascade trên ROI cắt từ ảnh gốc, dừng ở bước đầu tiên thành công:
+                ROI ×4 → zxing → warp 256 + Quiet Zone → zxing → CLAHE ×4 → WeChat
+                → stretch ×4 → WeChat CNN+SR → ROI ×3 → WeChat CNN+SR
 ```
+
+Model WeChat ONNX nằm trong `qr/models/wechat/` (thiếu thì bỏ qua bước CNN). Khoảng 1s/frame 2448×2048
+trên CPU — **Quét toàn bộ** video dài sẽ mất thời gian tương ứng.
 
 Gói `offline/qr/` là **bản copy nguyên** của `solution/qr/` để app độc lập, không import gì từ
 `solution/` và không cần MindVision SDK. Khi thuật toán trong `solution/qr/` thay đổi, copy lại thư mục.
@@ -46,7 +51,7 @@ offline/
 ├── workers.py        # DecodeWorker (1 frame, bỏ frame khi bận), ScanWorker (quét toàn bộ), SharedPipeline (khoá model)
 ├── media_source.py   # đọc ảnh (Unicode path), VideoSource (cv2.VideoCapture), ensure_bgr
 ├── results.py        # ResultLog: gộp kết quả, xuất CSV
-├── qr/               # copy nguyên từ solution/qr/
+├── qr/               # copy nguyên từ solution/qr/ (kèm models/wechat/*.onnx)
 └── tests/            # test offline, không cần model
 ```
 
@@ -54,6 +59,7 @@ offline/
 
 ```bash
 python -m unittest discover -s offline/tests -p "test_*.py"
+python offline/tests/test_small_qr.py    # cần model: QR tổng hợp nhỏ + frame mẫu images/*.bmp (≥12/14)
 ```
 
 ## Giới hạn

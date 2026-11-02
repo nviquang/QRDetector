@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import concurrent.futures
+import os
 
 import cv2
 import numpy as np
@@ -100,6 +101,56 @@ def _decode_wechat(image_bgr: np.ndarray) -> str | None:
                         return t
     except Exception:
         pass
+    return None
+
+
+# ── Decoder cho ROI QR nhỏ (dùng trong cascade của ImprovePipeline) ─────────
+
+_WECHAT_MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "wechat")
+_wechat_cnn_detector = None
+_wechat_cnn_loaded = False
+
+
+def decode_zxing_gray(gray: np.ndarray) -> str | None:
+    """zxing-cpp binarizer LocalAverage (mặc định) — rất nhanh (~1ms) trên ROI đã upscale."""
+    for b in zxingcpp.read_barcodes(gray, formats=zxingcpp.BarcodeFormat.QRCode, try_rotate=True):
+        if b.valid and b.text:
+            return b.text
+    return None
+
+
+def _get_wechat_cnn_detector():
+    """WeChatQRCode có CNN detector + super-resolution (model ONNX cho OpenCV 5).
+
+    Load 1 lần; nếu thiếu model hoặc lỗi load thì trả về None (cascade bỏ qua bước CNN).
+    """
+    global _wechat_cnn_detector, _wechat_cnn_loaded
+    if not _wechat_cnn_loaded:
+        _wechat_cnn_loaded = True
+        detect_path = os.path.join(_WECHAT_MODEL_DIR, "detect.onnx")
+        sr_path = os.path.join(_WECHAT_MODEL_DIR, "sr.onnx")
+        if hasattr(cv2, "wechat_qrcode_WeChatQRCode") and os.path.isfile(detect_path) and os.path.isfile(sr_path):
+            try:
+                # Model ONNX in WARN "Shape mismatch ... Clamping" mỗi lần chạy (vô hại) → chỉ log ERROR
+                cv2.utils.logging.setLogLevel(cv2.utils.logging.LOG_LEVEL_ERROR)
+                _wechat_cnn_detector = cv2.wechat_qrcode_WeChatQRCode(detect_path, sr_path)
+            except Exception:
+                _wechat_cnn_detector = None
+    return _wechat_cnn_detector
+
+
+def decode_wechat_gray(gray: np.ndarray, use_cnn: bool = False) -> str | None:
+    """WeChatQRCode một lần (không xoay — WeChat tự xử lý hướng). use_cnn=True dùng CNN + SR."""
+    detector = _get_wechat_cnn_detector() if use_cnn else _get_wechat_detector()
+    if detector is None:
+        return None
+    try:
+        texts, _ = detector.detectAndDecode(gray)
+    except Exception:
+        return None
+    for t in texts:
+        if t:
+            return t
     return None
 
 

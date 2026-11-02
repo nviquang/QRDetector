@@ -63,3 +63,36 @@ def upscale_adaptive(
     if pad_px > 0:
         binary = cv2.copyMakeBorder(binary, pad_px, pad_px, pad_px, pad_px, cv2.BORDER_CONSTANT, value=255)
     return cv2.cvtColor(binary, cv2.COLOR_GRAY2BGR)
+
+
+# ── Tiền xử lý ROI cho QR nhỏ (vài px/module) ────────────────────────────────
+
+_CLAHE = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(4, 4))
+
+
+def crop_roi_gray(image_bgr: np.ndarray, bbox_xyxy: np.ndarray, margin: float = 0.25) -> np.ndarray:
+    """Cắt bbox (nới thêm margin × cạnh dài) từ ảnh gốc độ phân giải đầy đủ, trả về ảnh xám."""
+    h, w = image_bgr.shape[:2]
+    x1, y1, x2, y2 = bbox_xyxy
+    m = margin * max(x2 - x1, y2 - y1)
+    x1, y1 = int(max(0, x1 - m)), int(max(0, y1 - m))
+    x2, y2 = int(min(w, x2 + m)), int(min(h, y2 + m))
+    roi = image_bgr[y1:y2, x1:x2]
+    return cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY) if roi.ndim == 3 else roi
+
+
+def clahe(gray: np.ndarray) -> np.ndarray:
+    """Cân bằng tương phản cục bộ (CLAHE) — giúp nhãn thiếu sáng/lệch sáng."""
+    return _CLAHE.apply(gray)
+
+
+def stretch_contrast(gray: np.ndarray) -> np.ndarray:
+    """Kéo giãn tuyến tính dải xám về [0, 255]."""
+    return cv2.normalize(gray, None, 0, 255, cv2.NORM_MINMAX)
+
+
+def upscale_gray(gray: np.ndarray, scale: int, pad_per_scale: int = 16) -> np.ndarray:
+    """Upscale bicubic rồi đệm viền replicate (pad_per_scale × scale px) để giữ Quiet Zone."""
+    up = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+    pad = pad_per_scale * scale
+    return cv2.copyMakeBorder(up, pad, pad, pad, pad, cv2.BORDER_REPLICATE)
