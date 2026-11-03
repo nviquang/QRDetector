@@ -17,7 +17,7 @@ import numpy as np
 
 import mvsdk
 
-from .conveyor import ConveyorSettings, align_band
+from .conveyor import ConveyorSettings, RunSettings, align_band
 from .recording import NativeRecorder, RecordingOptions, RecordingStatus
 
 
@@ -664,6 +664,54 @@ class CameraManager:
                        resolution=self.get_resolution(), band=self._band)
         logger.info("conveyor_mode speed_mm_s=%.0f mm_per_px=%.3f max_blur_px=%.2f applied=%r",
                     settings.speed_mm_s, settings.mm_per_px, settings.max_blur_px, applied)
+        return applied
+
+    def set_sensor_window(self, x: int, width: int, y: int, height: int) -> bool:
+        """Chỉ đọc vùng (x, y, width, height) của sensor. Căn bội 16 như ``set_sensor_band``."""
+        if self._configuration_locked() or self.handle is None or self.capability is None:
+            return False
+        sensor = self.capability.sResolutionRange
+        x, width = align_band(x, width, int(sensor.iWidthMax))
+        y, height = align_band(y, height, int(sensor.iHeightMax))
+        res = mvsdk.tSdkImageResolution()
+        res.iIndex = 0xFF
+        res.iHOffsetFOV, res.iVOffsetFOV = x, y
+        res.iWidthFOV, res.iHeightFOV = width, height
+        res.iWidth, res.iHeight = width, height
+        with self._sdk_lock:
+            ok = self._set("ImageResolution", (x, y, width, height),
+                           mvsdk.CameraSetImageResolution, res)
+        if ok:
+            self._band = (y, height)
+        return ok
+
+    def apply_run_settings(self, settings: RunSettings) -> dict | None:
+        """Cấu hình của bản demo: tắt AE, exposure và gain cố định (kẹp theo giới hạn camera), tốc độ
+        khung cao nhất, (tùy chọn) chỉ đọc một vùng sensor. Trả về giá trị thực tế đã áp dụng."""
+        if self.handle is None or self.capability is None or self._configuration_locked():
+            return None
+        expose = self.capability.sExposeDesc
+        line_time = self.f_exp_line_time or 1.0
+        lo = expose.uiExposeTimeMin * line_time
+        hi = expose.uiExposeTimeMax * line_time
+        ok = self.set_ae_state(False)            # tắt AE trước, nếu không AE ghi đè gain vừa đặt
+        ok = self.set_exposure_time(min(max(settings.exposure_us, lo), hi)) and ok
+        gain = min(max(settings.analog_gain, expose.uiAnalogGainMin), expose.uiAnalogGainMax)
+        ok = self.set_analog_gain(gain) and ok
+        speeds = int(getattr(self.capability, "iFrameSpeedDesc", 0) or 0)
+        if speeds > 0:
+            ok = self.set_frame_speed(speeds - 1) and ok
+        if settings.band_x is not None or settings.band_y is not None:
+            sensor = self.capability.sResolutionRange
+            x, width = settings.band_x or (0, int(sensor.iWidthMax))
+            y, height = settings.band_y or (0, int(sensor.iHeightMax))
+            ok = self.set_sensor_window(x, width, y, height) and ok
+        elif self._band is not None:
+            ok = self.set_roi(0) and ok           # bỏ vùng cũ → về độ phân giải preset đầu (toàn khung)
+        applied = dict(ok=ok, exposure_us=self.get_exposure_time(), analog_gain=self.get_analog_gain(),
+                       ae=self.get_ae_state(), frame_speed=self.get_frame_speed(),
+                       resolution=self.get_resolution())
+        logger.info("run_settings requested=%r applied=%r", settings, applied)
         return applied
 
     def save_param(self, slot: int):

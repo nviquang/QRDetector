@@ -59,3 +59,12 @@ class ConveyorSettings:
     @property
     def exposure_us(self) -> float:
         return max_exposure_us(self.speed_mm_s, self.mm_per_px, self.max_blur_px)
+
+
+@dataclass(frozen=True)
+class RunSettings:
+    """Cấu hình đặt trực tiếp của bản demo (không tính exposure theo tốc độ băng)."""
+    exposure_us: float
+    analog_gain: int
+    band_x: tuple[int, int] | None = None         # (x, width) vùng sensor cần đọc; None = toàn bề rộng
+    band_y: tuple[int, int] | None = None         # (y, height) vùng sensor cần đọc; None = toàn chiều cao

@@ -44,21 +44,31 @@ class QRDetector:
         self._detector = _QRDetector(model_size=model_size, conf_th=conf_th)
         self._conf_th = conf_th
         self._imgsz = imgsz
-        self._device = resolve_device(device, torch.cuda.is_available())
-        self._half = half and self._device.startswith("cuda")
+        self._want_half = half
+        self.set_device(device)
+
+    def set_device(self, device: str):
+        """Đổi được lúc đang chạy: frame đang detect chạy nốt trên thiết bị cũ, YOLO tự nạp lại
+        model sang thiết bị mới ở lần detect sau. Lần đầu lên GPU mất vài giây (như warmup)."""
+        resolved = resolve_device(device, torch.cuda.is_available())
         gpu = "-"
-        if self._device.startswith("cuda"):
+        if resolved.startswith("cuda"):
             try:
-                gpu = torch.cuda.get_device_name(self._device)
+                gpu = torch.cuda.get_device_name(resolved)
             except Exception as e:   # driver lỗi dù is_available() → dùng CPU, app vẫn khởi động
                 logger.warning("Không đọc được GPU (%s) — detector chạy CPU", e)
-                self._device, self._half = "cpu", False
+                resolved = "cpu"
+        self._device, self._half = resolved, self._want_half and resolved.startswith("cuda")
         logger.info("qr_detector device=%s half=%s imgsz=%d gpu=%s",
-                    self._device, self._half, imgsz, gpu)
+                    self._device, self._half, self._imgsz, gpu)
 
     @property
     def device(self) -> str:
         return self._device
+
+    @property
+    def gpu_available(self) -> bool:
+        return torch.cuda.is_available()
 
     def warmup(self, shape: tuple[int, int] = (768, 2448)):
         """Detect một lần trên ảnh đen — lần đầu trên GPU mất vài giây (nạp kernel CUDA)."""

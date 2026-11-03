@@ -1,0 +1,1011 @@
+<meta charset="utf-8">
+<title>Bố trí camera QR băng kính</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Bố cục: khu vực 3D chiếm phần lớn màn hình, cột phải là phiếu lắp đặt kèm thông số chỉnh được */
+:root {
+  --bg: #eef0ee; --panel: #f8f9f7; --fg: #1d2523; --muted: #5d6965; --line: #d3d9d5;
+  --scene: #dde2df; --floor: #c6cdc9; --grid: #aeb7b2;
+  --cam-a: #0b7a86; --cam-b: #bd5314; --accent: #2f4f46;
+  --ok: #1d7a46; --warn: #a06400; --bad: #b3261e;
+  --ok-bg: #dcefe2; --warn-bg: #f6e8c9; --bad-bg: #f8dedb;
+  --sans: "Be Vietnam Pro", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #171c1b; --panel: #1e2423; --fg: #e6ebe8; --muted: #9aa6a1; --line: #343d3a;
+  --scene: #232a29; --floor: #2c3432; --grid: #424c49;
+  --cam-a: #4cc3cf; --cam-b: #f0955a; --accent: #9cc4b6;
+  --ok: #6fd097; --warn: #e6b65a; --bad: #f28b82;
+  --ok-bg: #1c3527; --warn-bg: #3a2f14; --bad-bg: #40201d; color-scheme: dark;
+} }
+:root[data-theme="dark"] {
+  --bg: #171c1b; --panel: #1e2423; --fg: #e6ebe8; --muted: #9aa6a1; --line: #343d3a;
+  --scene: #232a29; --floor: #2c3432; --grid: #424c49;
+  --cam-a: #4cc3cf; --cam-b: #f0955a; --accent: #9cc4b6;
+  --ok: #6fd097; --warn: #e6b65a; --bad: #f28b82;
+  --ok-bg: #1c3527; --warn-bg: #3a2f14; --bad-bg: #40201d; color-scheme: dark;
+}
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 var(--sans); }
+.app { display: grid; grid-template-columns: minmax(0, 1fr) 392px; height: 100%; }
+.stage { position: relative; overflow: hidden; background: var(--scene); min-width: 0; }
+.stage canvas { display: block; position: absolute; inset: 0; touch-action: none; }
+.panel { background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; padding-block: 20px 32px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; gap: 22px; min-width: 0; }
+h1 { font-size: 20px; line-height: 1.25; margin: 0; font-weight: 700; text-wrap: balance; }
+h2 { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; font-weight: 600; }
+.verdict { margin: 8px 0 0; color: var(--muted); }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+.spec { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px 14px; margin: 0; }
+.spec dt { color: var(--muted); }
+.spec dd { margin: 0; text-align: right; white-space: nowrap; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.tag-a { color: var(--cam-a); font-weight: 600; }
+.tag-b { color: var(--cam-b); font-weight: 600; }
+.copy { margin-top: 10px; }
+
+.checks { display: flex; flex-direction: column; gap: 9px; }
+.check { display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 10px; align-items: start; }
+.chip { font-size: 11.5px; font-weight: 600; text-align: center; border-radius: 3px; padding: 2px 0; }
+.chip.ok { color: var(--ok); background: var(--ok-bg); }
+.chip.warn { color: var(--warn); background: var(--warn-bg); }
+.chip.bad { color: var(--bad); background: var(--bad-bg); }
+.check b { font-weight: 600; display: block; }
+.check span.d { color: var(--muted); font-size: 12.5px; display: block; }
+
+.ctl { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1px 10px; margin-bottom: 11px; }
+.ctl label { font-size: 13px; }
+.ctl output { font: 12.5px var(--mono); font-variant-numeric: tabular-nums; }
+.ctl input[type=range] { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); margin: 3px 0 0; }
+.ctl input:disabled { opacity: .45; }
+select, button { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 5px 9px; }
+select { width: 100%; grid-column: 1 / -1; margin-top: 3px; }
+button { cursor: pointer; }
+button:hover { border-color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.cal { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.cal label { font-size: 12.5px; display: flex; flex-direction: column; gap: 3px; }
+.cal input { width: 100%; box-sizing: border-box; font: 13px var(--mono); color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; }
+.toggle { display: flex; gap: 8px; align-items: center; margin-bottom: 11px; font-size: 13px; }
+
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+th { text-align: right; font-weight: 500; color: var(--muted); padding: 3px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { text-align: right; padding: 0; border-bottom: 1px solid var(--line); font-family: var(--mono); font-variant-numeric: tabular-nums; }
+th:first-child, td:first-child { text-align: left; }
+tr.lens { cursor: pointer; }
+tr.lens td { padding: 5px 6px; }
+tr.lens:hover td { background: var(--bg); }
+tr.lens.on td { font-weight: 500; color: var(--accent); }
+.note { color: var(--muted); font-size: 12.5px; margin: 8px 0 0; }
+ul.assume { margin: 0; padding-left: 18px; color: var(--muted); font-size: 12.5px; display: flex; flex-direction: column; gap: 4px; }
+
+.bar { position: absolute; top: 12px; left: max(16px, env(safe-area-inset-left, 0px)); display: flex; flex-wrap: wrap; gap: 6px; z-index: 3; }
+.bar button { background: var(--panel); font-size: 12.5px; padding: 4px 9px; }
+.sim { position: absolute; top: 12px; right: 16px; z-index: 3; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 4px 9px; font-size: 12.5px; }
+.pips { position: absolute; left: max(16px, env(safe-area-inset-left, 0px)); right: 16px; bottom: 14px; display: flex; gap: 10px; justify-content: flex-start; z-index: 3; pointer-events: none; }
+.pip { position: relative; width: min(250px, calc(50% - 5px)); aspect-ratio: 2448 / 2048; max-width: 100%; border: 2px solid; overflow: hidden; }
+.pip.a { border-color: var(--cam-a); }
+.pip.b { border-color: var(--cam-b); }
+.pip .mask { position: absolute; left: 0; right: 0; background: rgba(10, 14, 13, .62); }
+.pip .mask.t { top: 0; }
+.pip .mask.u { bottom: 0; }
+.pip .cap { position: absolute; left: 4px; top: 3px; font: 11px var(--mono); color: #fff; text-shadow: 0 1px 2px #000; }
+.lb { position: absolute; left: 0; top: 0; z-index: 2; pointer-events: none; font: 500 12px var(--mono); white-space: nowrap; background: var(--panel); color: var(--fg); padding: 0 5px; border-radius: 3px; border: 1px solid var(--line); will-change: transform; }
+.lb.a { color: var(--cam-a); border-color: var(--cam-a); }
+.lb.b { color: var(--cam-b); border-color: var(--cam-b); }
+.err { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; text-align: center; }
+
+@media (max-width: 880px) {
+  html, body { height: auto; }
+  .app { display: block; height: auto; }
+  .stage { height: 68vh; min-height: 420px; }
+  .panel { border-left: 0; border-top: 1px solid var(--line); overflow: visible; }
+  .bar { right: 16px; }
+  .sim { top: 118px; right: auto; left: max(16px, env(safe-area-inset-left, 0px)); }
+}
+</style>
+
+<div class="app">
+  <div class="stage" id="stage">
+    <div class="bar">
+      <button id="v-sketch" type="button">Góc như hình vẽ</button>
+      <button id="v-top" type="button">Nhìn từ trên</button>
+      <button id="v-side" type="button">Nhìn ngang</button>
+      <button id="play" type="button">Tạm dừng</button>
+      <button id="cage-btn" type="button">Ẩn lồng</button>
+    </div>
+    <div class="sim num" id="sim"></div>
+    <div class="pips">
+      <div class="pip a" id="pip-a"><div class="mask t"></div><div class="mask u"></div><div class="cap">CAM A</div></div>
+      <div class="pip b" id="pip-b"><div class="mask t"></div><div class="mask u"></div><div class="cap">CAM B</div></div>
+    </div>
+  </div>
+
+  <aside class="panel">
+    <header>
+      <h1>Bố trí 2 camera đọc QR trên băng kính</h1>
+      <p class="verdict" id="verdict"></p>
+    </header>
+
+    <section>
+      <h2>Thông số lắp</h2>
+      <dl class="spec" id="spec"></dl>
+      <button class="copy" id="copy" type="button">Sao chép thông số</button>
+    </section>
+
+    <section>
+      <h2>Kiểm tra</h2>
+      <div class="checks" id="checks"></div>
+    </section>
+
+    <section>
+      <h2>Số đo vùng phủ thực tế</h2>
+      <div class="cal">
+        <label for="cal-h">Cao (cm)<input type="number" id="cal-h" min="1" step="1"></label>
+        <label for="cal-w">Cạnh dài (cm)<input type="number" id="cal-w" min="1" step="1"></label>
+        <label for="cal-s">Cạnh ngắn (cm)<input type="number" id="cal-s" min="1" step="1"></label>
+      </div>
+      <p class="note" id="cal-out"></p>
+      <div class="scroll"><table>
+        <thead><tr><th>Cao, nhìn thẳng xuống</th><th>Cạnh dài</th><th>Cạnh ngắn</th></tr></thead>
+        <tbody id="cal-table"></tbody>
+      </table></div>
+      <p class="note">Cạnh ngắn ghi theo khoảng từ mô hình tới tỉ lệ đo bằng thước.</p>
+    </section>
+
+    <section>
+      <h2>Vị trí và quang học</h2>
+      <div id="ctl-mount"></div>
+      <label class="toggle"><input type="checkbox" id="auto"> Tự tính góc nghiêng để phủ đủ dải gần</label>
+    </section>
+
+    <section>
+      <h2>Lồng che sáng</h2>
+      <label class="toggle"><input type="checkbox" id="show-cage"> Hiện lồng, rèm và đèn</label>
+      <div id="ctl-cage"></div>
+      <p class="note">Tấm che chỉ vẽ trong suốt để nhìn được bên trong; lồng thật dùng tấm đen mờ không xuyên sáng, kéo độ đậm lên 100% để xem hình dáng thật. Vạch vàng là vệt phản chiếu của đèn trên kính, cần nằm ngoài dải quét.</p>
+    </section>
+
+    <section>
+      <h2>Chọn ống kính</h2>
+      <div class="scroll"><table>
+        <thead><tr><th>Tiêu cự</th><th>HFOV</th><th>Cao tối thiểu</th><th>Nghiêng</th><th>Dài dải</th></tr></thead>
+        <tbody id="lens"></tbody>
+      </table></div>
+      <p class="note">Bấm một dòng để áp dụng. Chiều cao tính sao cho tia gần nhất lệch 15° so với phương thẳng đứng. Tiêu cự ngắn lắp thấp hơn nhưng méo và nghiêng nhiều hơn.</p>
+    </section>
+
+    <section>
+      <h2>Sản phẩm và băng</h2>
+      <div id="ctl-prod"></div>
+    </section>
+
+    <section>
+      <h2>Giả định cần xác nhận</h2>
+      <ul class="assume">
+        <li>Góc nhìn lấy từ số đo bằng thước, giả định lúc đo camera nhìn thẳng xuống và cạnh dài vùng đo ứng với cạnh 2448 px.</li>
+        <li>Camera 2448×2048 lấy từ log. Cảm biến 2/3″, 3,45 µm là suy đoán nên tiêu cự theo đo chỉ là giá trị tương đương; góc nhìn không phụ thuộc suy đoán này.</li>
+        <li>QR 25 mm, 21 ô và tốc độ 10–30 cm/s lấy từ <span class="num">conveyor.py</span>. Chưa đo trên kính thật.</li>
+        <li>Thân máy cao 1,6 m trên mặt băng, mặt băng cao 0,9 m là ước lượng từ hình vẽ.</li>
+        <li>FPS suy từ mốc 50 fps ở dải 768 dòng, tỉ lệ nghịch với số điểm ảnh đọc. Cần đo lại trên camera.</li>
+        <li>Thời gian decode 336 ms/khung đo trên GTX 1650. Hai camera chung một GPU nên mỗi camera còn 672 ms.</li>
+        <li>Mô hình ống kính là pinhole, chưa tính méo. Ống kính 4–6 mm cần chừa thêm chồng lấn khi lắp thực tế.</li>
+      </ul>
+    </section>
+  </aside>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+'use strict';
+const BELT_ALONG = 2500, BELT_CROSS = 3600;   // mm: dọc hướng chạy, ngang hướng chạy
+const SENSORS = {
+  cur: { name: 'Hiện tại 5 MP, 2448×2048, 3,45 µm', w: 2448, h: 2048, pitch: 3.45 },
+  mp12: { name: '12 MP, 4096×3000, 3,45 µm', w: 4096, h: 3000, pitch: 3.45 },
+  mp24: { name: '24,5 MP, 5328×4608, 2,74 µm', w: 5328, h: 4608, pitch: 2.74 },
+};
+const LENSES = [6, 8, 12, 16];
+// Số đo thực tế: nhìn thẳng xuống từ h thì thấy vùng w × s (mm). w ứng với cạnh dài sensor.
+const CAL = { h: 700, w: 1450, s: 1300 };
+// Tiêu cự lấy theo cạnh dài vì cạnh này quyết định phủ chiều 3,6 m, nên không ước lượng thừa độ phủ
+function calibrate() { return sensorMm(SENSORS.cur).sw * CAL.h / CAL.w; }
+let calF = calibrate();
+function allLenses() { return [calF].concat(LENSES); }
+function lensName(f) { return f === calF ? fmt(f, 2) + ' mm (theo đo)' : f + ' mm'; }
+const TARGET_OVERLAP = 120;    // mm chồng lấn mục tiêu giữa 2 camera ở dải gần
+const NEAR_LIMIT_DEG = 80;     // không cho tia gần nhất dựng đứng hơn mức này khi tự tính
+const LENS_NEAR_DEG = 75;
+const DECODE_S = 0.336, CAMERAS_ON_GPU = 2, TARGET_TRIES = 5;
+const FPS_REF = 50, FPS_REF_PIXELS = 2448 * 768;
+const SIM_SPEEDUP = 3;
+const LAMP_LEN_MM = 1400;
+
+// Mặc định là bộ thông số chuẩn đã chốt khi lắp: nhìn thẳng xuống, ROI y = 720, cao 592
+const p = { sensor: 'cur', lens: calF, height: 1000, standoff: 280, spacing: 1680, edge: 960, pitch: 90, tilt: 0, toe: 0, rows: 592,
+            qr: 25, modules: 21, speed: 300, machine: 1600, auto: false,
+            cage: true, cageLen: 600, cageH: 1200, cageOpacity: 18, lampX: 560, lampH: 300 };
+
+const rad = d => d * Math.PI / 180, deg = r => r * 180 / Math.PI;
+const fmt = (n, d = 0) => Number(n).toLocaleString('vi-VN', { minimumFractionDigits: d, maximumFractionDigits: d });
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
+/* ---------- Hình học thuần: mọi độ dài mm, góc pitch tính so với phương ngang ---------- */
+function sensorMm(s) { return { sw: s.w * s.pitch / 1000, sh: s.h * s.pitch / 1000, px: s.pitch / 1000 }; }
+function halfCrop(params) { const s = SENSORS[params.sensor]; return params.rows * s.pitch / 2000; }
+
+// Bề rộng dải gần cần có: đủ che khoảng giữa 2 camera và đủ tới mép băng, phần nào xa hơn thì quyết định
+function targetWidth(params) { return Math.max(params.spacing, 2 * params.edge) + TARGET_OVERLAP; }
+
+function autoPitch(params, target) {
+  const s = sensorMm(SENSORS[params.sensor]), vh = halfCrop(params), f = params.lens;
+  const hyp = Math.hypot(f, vh), alpha = Math.atan(vh / f);
+  const sinNear = params.height * s.sw / (target * hyp);
+  const near = sinNear >= Math.sin(rad(NEAR_LIMIT_DEG)) ? rad(NEAR_LIMIT_DEG) : Math.asin(sinNear);
+  return deg(near - alpha);
+}
+
+// Giao tia từ điểm (u, v) mm trên sensor với mặt kính. fwd: mm tính từ camera theo hướng băng chạy.
+// off: mm ngang băng, dương là phía giữa băng. Góc chụm là phép xoay quanh trục hướng băng chạy.
+function rayToPlane(params, u, v) {
+  const th = rad(params.pitch), f = params.lens, toe = rad(params.toe);
+  const fwd = f * Math.cos(th) + v * Math.sin(th);
+  const down0 = f * Math.sin(th) - v * Math.cos(th);
+  const down = down0 * Math.cos(toe) - u * Math.sin(toe);
+  if (down <= 1e-6) return null;
+  const t = params.height / down;
+  return { fwd: t * fwd, off: t * (u * Math.cos(toe) + down0 * Math.sin(toe)), t };
+}
+
+// Chiếu điểm trên mặt kính về sensor, dùng để kiểm tra QR có nằm trong vùng đọc hay không.
+function projectToSensor(params, fwd, off) {
+  const th = rad(params.pitch), f = params.lens, H = params.height, toe = rad(params.toe);
+  const down0 = H * Math.cos(toe) + off * Math.sin(toe);
+  const off0 = off * Math.cos(toe) - H * Math.sin(toe);
+  const depth = fwd * Math.cos(th) + down0 * Math.sin(th);
+  if (depth <= 0) return null;
+  return { u: f * off0 / depth, v: f * (fwd * Math.sin(th) - down0 * Math.cos(th)) / depth };
+}
+
+function compute(params) {
+  const sensor = SENSORS[params.sensor], s = sensorMm(sensor), vh = halfCrop(params);
+  const near = rayToPlane(params, 0, -vh), far = rayToPlane(params, 0, vh);
+  if (!near || !far) return null;
+  // Bốn góc vùng đọc: [phía mép băng, phía giữa băng] × [hàng gần máy, hàng xa máy]
+  const [outNear, outFar, inNear, inFar] = [-s.sw / 2, s.sw / 2].flatMap(u => [-vh, vh].map(v => rayToPlane(params, u, v)));
+  if (!outNear || !outFar || !inNear || !inFar) return null;
+  // Độ phân giải lấy mẫu ở nhiều vị trí vì khi chụm, phía giữa băng xa camera hơn nên ít điểm ảnh hơn
+  const res = [];
+  [-s.sw / 2, 0, s.sw / 2 - s.px].forEach(u => [-vh, vh - s.px].forEach(v => {
+    const a = rayToPlane(params, u, v), bu = rayToPlane(params, u + s.px, v), bv = rayToPlane(params, u, v + s.px);
+    if (a && bu && bv) res.push({
+      cross: Math.hypot(bu.off - a.off, bu.fwd - a.fwd), along: Math.hypot(bv.fwd - a.fwd, bv.off - a.off) });
+  }));
+  const mms = res.map(x => Math.max(x.cross, x.along));
+  const mmBest = Math.min(...mms), mmWorst = Math.max(...mms);
+  const diag = params.qr * Math.SQRT2;
+  // Lấy hàng hẹp hơn ở từng phía: nghiêng hoặc chụm làm vùng đọc thành hình thang
+  const reachOut = -Math.max(outNear.off, outFar.off), reachIn = Math.min(inNear.off, inFar.off);
+  const overlap = 2 * reachIn - (BELT_CROSS - 2 * params.edge);
+  const edgeMargin = reachOut - params.edge;
+  const stripLen = far.fwd - near.fwd;
+  const stripFrom = params.standoff + Math.min(outNear.fwd, inNear.fwd), stripTo = params.standoff + Math.max(outFar.fwd, inFar.fwd);
+  // Thời gian QR ở trong vùng đọc tính ở cột ngắn nhất; phần lọt vào khe máy không tính
+  const usable = Math.max(0, params.standoff + Math.min(outFar.fwd, inFar.fwd) - Math.max(0, params.standoff + Math.max(outNear.fwd, inNear.fwd)));
+  const dwell = Math.max(0, usable - diag) / params.speed;
+  const fps = FPS_REF * FPS_REF_PIXELS / (sensor.w * params.rows);
+  const tries = dwell / (DECODE_S * CAMERAS_ON_GPU);
+  return {
+    diag, overlap, edgeMargin, stripLen, usable, dwell, fps, tries, stripFrom, stripTo,
+    pxBest: params.qr / mmBest / params.modules, pxWorst: params.qr / mmWorst / params.modules,
+    qrFor4: 4 * params.modules * mmWorst,
+    expoMs: Math.min(...res.map(x => x.along)) / params.speed * 1000,
+    bandY: Math.floor((sensor.h - params.rows) / 2 / 16) * 16,
+  };
+}
+
+// Kính phản xạ như gương: tia từ đèn tới camera chạm kính tại điểm chia đoạn theo tỉ lệ chiều cao.
+// Xét cả đèn của camera kia vì hai thanh đèn cùng nằm trên một đường ngang băng.
+function lampInfo(params) {
+  const s = sensorMm(SENSORS[params.sensor]), vh = halfCrop(params), H = params.height;
+  const dx = params.lampX - params.standoff, ratio = H / (H + params.lampH);
+  const offset = dx * ratio;
+  const span = BELT_CROSS - 2 * params.edge, half = LAMP_LEN_MM / 2;
+  const closer = Object.assign({}, params, { height: H - params.lampH });
+  let inRoi = false, inView = false, margin = Infinity;
+  for (let off = -half; off <= span + half; off += 20) {
+    if (Math.abs(off) > half && Math.abs(off - span) > half) continue;
+    const glare = projectToSensor(params, offset, off * ratio);
+    if (glare && Math.abs(glare.u) <= s.sw / 2) {
+      if (Math.abs(glare.v) <= vh) inRoi = true;
+      else margin = Math.min(margin, (Math.abs(glare.v) - vh) * H / params.lens);
+    }
+    if (params.lampH < H) {
+      const bar = projectToSensor(closer, dx, off);
+      if (bar && Math.abs(bar.u) <= s.sw / 2 && Math.abs(bar.v) <= vh) inView = true;
+    }
+  }
+  return { offset, inRoi, inView, margin: inRoi ? 0 : margin, fromFace: params.standoff + offset };
+}
+
+/* ---------- Bảng điều khiển ---------- */
+function tiltText(v) {
+  if (v === 0) return 'Thẳng đứng';
+  return fmt(Math.abs(v), 1) + (v > 0 ? '° về phía máy' : '° về phía rèm');
+}
+function toeText(v) { return v === 0 ? 'Không chụm' : fmt(v, 1) + '° mỗi camera'; }
+const CTL_MOUNT = [
+  { k: 'height', label: 'Chiều cao camera trên mặt kính', min: 500, max: 3500, step: 10, show: v => fmt(v / 1000, 2) + ' m' },
+  { k: 'standoff', label: 'Tay đỡ nhô ra khỏi mặt máy', min: 0, max: 800, step: 10, show: v => fmt(v) + ' mm' },
+  { k: 'spacing', label: 'Khoảng cách 2 camera (đối xứng qua tâm băng)', min: 1000, max: 2600, step: 20, show: v => fmt(v) + ' mm' },
+  { k: 'toe', label: 'Góc chụm 2 camera vào giữa băng', min: 0, max: 30, step: 0.5, show: toeText },
+  { k: 'tilt', label: 'Góc theo hướng băng (dương là về phía máy)', min: -70, max: 30, step: 0.5, show: tiltText },
+  { k: 'rows', label: 'Số dòng sensor đọc (cắt chiều 2,5 m)', min: 256, max: 2048, step: 16, show: v => fmt(v) + ' dòng' },
+];
+const CTL_PROD = [
+  { k: 'qr', label: 'Cạnh QR', min: 15, max: 120, step: 1, show: v => fmt(v) + ' mm' },
+  { k: 'modules', label: 'Số ô QR (bản 1 = 21)', min: 21, max: 57, step: 4, show: v => fmt(v) + ' ô' },
+  { k: 'speed', label: 'Tốc độ băng', min: 50, max: 800, step: 10, show: v => fmt(v / 10) + ' cm/s' },
+  { k: 'machine', label: 'Thân máy cao trên mặt băng', min: 800, max: 3500, step: 50, show: v => fmt(v / 1000, 2) + ' m' },
+];
+const CTL_CAGE = [
+  { k: 'cageLen', label: 'Lồng dài ra khỏi mặt máy', min: 500, max: 1500, step: 10, show: v => fmt(v) + ' mm' },
+  { k: 'cageH', label: 'Lồng cao trên mặt kính', min: 1000, max: 1800, step: 10, show: v => fmt(v) + ' mm' },
+  { k: 'cageOpacity', label: 'Độ đậm tấm che khi xem', min: 5, max: 100, step: 1, show: v => fmt(v) + '%' },
+  { k: 'lampX', label: 'Đèn cách mặt máy', min: 0, max: 1500, step: 10, show: v => fmt(v) + ' mm' },
+  { k: 'lampH', label: 'Đèn cao trên mặt kính', min: 100, max: 1500, step: 10, show: v => fmt(v) + ' mm' },
+];
+const ctlEls = {};
+function buildCtl(host, list) {
+  list.forEach(c => {
+    const box = document.createElement('div'); box.className = 'ctl';
+    const id = 'c-' + c.k;
+    box.innerHTML = `<label for="${id}">${c.label}</label><output id="${id}-o"></output>
+      <input type="range" id="${id}" min="${c.min}" max="${c.max}" step="${c.step}">`;
+    host.appendChild(box);
+    const input = box.querySelector('input');
+    ctlEls[c.k] = { input, out: box.querySelector('output'), show: c.show };
+    input.addEventListener('input', () => { p[c.k] = Number(input.value); update(); });
+  });
+}
+function addSelect(host, id, label, options, onChange, value) {
+  const box = document.createElement('div'); box.className = 'ctl';
+  box.innerHTML = `<label for="${id}">${label}</label><select id="${id}">${options.map(o => `<option value="${o[0]}">${o[1]}</option>`).join('')}</select>`;
+  host.prepend(box);
+  const el = box.querySelector('select'); el.value = value;
+  el.addEventListener('change', () => onChange(el.value));
+  return el;
+}
+const elMount = document.getElementById('ctl-mount');
+buildCtl(elMount, CTL_MOUNT);
+buildCtl(document.getElementById('ctl-prod'), CTL_PROD);
+buildCtl(document.getElementById('ctl-cage'), CTL_CAGE);
+document.getElementById('show-cage').addEventListener('change', e => { p.cage = e.target.checked; update(); });
+document.getElementById('cage-btn').addEventListener('click', () => { p.cage = !p.cage; update(); });
+const lensOptions = () => allLenses().map(f => [f, lensName(f)]);
+const lensSel = addSelect(elMount, 'c-lens', 'Tiêu cự ống kính', lensOptions(), v => { p.lens = Number(v); update(); }, p.lens);
+
+['h', 'w', 's'].forEach(k => {
+  const input = document.getElementById('cal-' + k);
+  input.value = CAL[k] / 10;
+  input.addEventListener('input', () => {
+    const v = Number(input.value) * 10;
+    if (!(v > 0)) return;   // ô đang trống hoặc giá trị chưa hợp lệ thì giữ số đo cũ
+    CAL[k] = v;
+    const wasCal = p.lens === calF;
+    calF = calibrate();
+    if (wasCal) p.lens = calF;
+    lensSel.innerHTML = lensOptions().map(o => `<option value="${o[0]}">${o[1]}</option>`).join('');
+    update();
+  });
+});
+function renderCal() {
+  const s = sensorMm(SENSORS.cur), sensor = SENSORS.cur;
+  const hfov = 2 * deg(Math.atan(CAL.w / 2 / CAL.h)), vfov = 2 * deg(Math.atan(CAL.s / 2 / CAL.h));
+  const modelS = s.sh / calF * CAL.h, diff = (modelS - CAL.s) / CAL.s * 100;
+  const mmPx = CAL.w / sensor.w;
+  document.getElementById('cal-out').innerHTML =
+    `Góc nhìn đo được ${fmt(hfov, 1)}° × ${fmt(vfov, 1)}°, tương đương tiêu cự ${fmt(calF, 2)} mm (${fmt(sensor.w * CAL.h / CAL.w)} px). ` +
+    `Ở độ cao đo, mô hình cho ${fmt(CAL.w / 10, 1)} × ${fmt(modelS / 10, 1)} cm; cạnh ngắn lệch ${fmt(diff, 1)}% so với thước. ` +
+    `Độ phân giải ${fmt(mmPx, 2)} mm/px, QR ${fmt(p.qr)} mm đạt ${fmt(p.qr / mmPx / p.modules, 1)} px/ô.`;
+  const heights = [...new Set([CAL.h, 1000, 1350, 1800, p.height])].sort((a, b) => a - b);
+  document.getElementById('cal-table').innerHTML = heights.map(h =>
+    `<tr><td>${fmt(h / 1000, 2)} m</td><td>${fmt(CAL.w / CAL.h * h / 10)} cm</td><td>${fmt(s.sh / calF * h / 10)}–${fmt(CAL.s / CAL.h * h / 10)} cm</td></tr>`).join('');
+}
+const sensorSel = addSelect(elMount, 'c-sensor', 'Camera', Object.keys(SENSORS).map(k => [k, SENSORS[k].name]), v => { p.sensor = v; p.rows = Math.min(p.rows, SENSORS[v].h); update(); }, p.sensor);
+document.getElementById('auto').addEventListener('change', e => { p.auto = e.target.checked; update(); });
+
+function lensRow(f) {
+  const q = Object.assign({}, p, { lens: f, toe: 0 });
+  const s = sensorMm(SENSORS[q.sensor]), vh = halfCrop(q), target = targetWidth(q);
+  const hyp = Math.hypot(f, vh), alpha = Math.atan(vh / f), nearA = rad(LENS_NEAR_DEG);
+  q.height = target * hyp * Math.sin(nearA) / s.sw;
+  q.pitch = deg(nearA - alpha);
+  const r = compute(q);
+  return { f, height: q.height, pitch: q.pitch, hfov: 2 * deg(Math.atan(s.sw / 2 / f)), len: r ? r.stripLen : NaN };
+}
+function renderLensTable() {
+  const body = document.getElementById('lens');
+  body.innerHTML = allLenses().map(f => {
+    const r = lensRow(f);
+    return `<tr class="lens${f === p.lens ? ' on' : ''}" data-f="${f}" data-h="${Math.round(r.height / 10) * 10}" tabindex="0">
+      <td>${lensName(f)}</td><td>${fmt(r.hfov)}°</td><td>${fmt(r.height / 1000, 2)} m</td><td>${fmt(r.pitch)}°</td><td>${fmt(r.len / 1000, 2)} m</td></tr>`;
+  }).join('');
+}
+function applyLensRow(tr) { p.lens = Number(tr.dataset.f); p.height = Number(tr.dataset.h); p.auto = true; update(); }
+document.getElementById('lens').addEventListener('click', e => { const tr = e.target.closest('tr'); if (tr) applyLensRow(tr); });
+document.getElementById('lens').addEventListener('keydown', e => { if (e.key === 'Enter') { const tr = e.target.closest('tr'); if (tr) applyLensRow(tr); } });
+
+let specText = '';
+function renderPanel(r) {
+  const sensor = SENSORS[p.sensor];
+  const zB = BELT_CROSS - p.edge;
+  const rows = [
+    ['<span class="tag-a">CAM A</span> cách mép xa', fmt(p.edge) + ' mm'],
+    ['<span class="tag-b">CAM B</span> cách mép xa', fmt(zB) + ' mm'],
+    ['Khoảng cách 2 camera', fmt(zB - p.edge) + ' mm'],
+    ['Cao trên mặt kính', fmt(p.height) + ' mm'],
+    ['Tay đỡ nhô khỏi mặt máy', fmt(p.standoff) + ' mm'],
+    ['Góc chụm vào giữa băng', toeText(p.toe)],
+    ['Góc theo hướng băng', tiltText(p.tilt)],
+    ['Ống kính', lensName(p.lens)],
+    ['Cạnh dài sensor nằm theo', 'chiều 3,6 m'],
+    ['ROI đọc (y, cao)', fmt(r ? r.bandY : 0) + ', ' + fmt(p.rows)],
+    ['Dải quét tính từ mặt máy', r ? fmt(r.stripFrom / 1000, 2) + '–' + fmt(r.stripTo / 1000, 2) + ' m' : '—'],
+  ];
+  if (p.cage) rows.push(
+    ['Lồng dài × cao', fmt(p.cageLen) + ' × ' + fmt(p.cageH) + ' mm'],
+    ['Đèn cách mặt máy, cao', fmt(p.lampX) + ', ' + fmt(p.lampH) + ' mm'],
+  );
+  document.getElementById('spec').innerHTML = rows.map(x => `<dt>${x[0]}</dt><dd>${x[1]}</dd>`).join('');
+  specText = rows.map(x => x[0].replace(/<[^>]+>/g, '') + ': ' + x[1]).join('\n');
+
+  const chips = { ok: 'Đạt', warn: 'Sát', bad: 'Thiếu' };
+  const list = [];
+  if (!r) {
+    list.push(['bad', 'Không có giao điểm', 'Trục nhìn quá nằm ngang nên vùng đọc không rơi xuống mặt kính.']);
+  } else {
+    const gap = Math.max(0, r.diag - r.overlap);
+    const covered = r.edgeMargin >= 0 && gap === 0;
+    list.push([covered ? (r.overlap >= TARGET_OVERLAP * .8 && r.edgeMargin >= 30 ? 'ok' : 'warn') : 'bad', 'Phủ chiều 3,6 m',
+      `Chồng lấn ${fmt(r.overlap)} mm, cần ≥${fmt(r.diag)} mm (đường chéo QR). Dư ở mép băng ${fmt(r.edgeMargin)} mm.`]);
+    const pxN = r.pxWorst;
+    list.push([pxN >= 4 ? 'ok' : pxN >= 2.8 ? 'warn' : 'bad', 'Độ phân giải trên QR',
+      `${fmt(r.pxBest, 1)} px/ô chỗ tốt nhất, ${fmt(pxN, 1)} px/ô chỗ kém nhất. Lab đọc được 12/14 ảnh ở 2,8 px/ô, tài liệu khuyến nghị ≥4. Muốn đạt 4 px/ô cần QR ≥${fmt(r.qrFor4)} mm.`]);
+    list.push([r.tries >= TARGET_TRIES ? 'ok' : r.tries >= 2 ? 'warn' : 'bad', 'Số lần thử decode',
+      `${fmt(r.tries, 1)} lần cho mỗi QR, mục tiêu ≥${TARGET_TRIES}. QR ở trong dải ${fmt(r.dwell, 1)} s, khoảng ${fmt(r.fps)} fps nên có ${fmt(r.dwell * r.fps)} khung.`]);
+    list.push([r.stripTo <= BELT_ALONG && r.stripFrom >= 0 ? 'ok' : 'warn', 'Dải quét nằm trên băng',
+      `Dùng được ${fmt(r.usable / 1000, 2)} m trong tổng 2,5 m (${fmt(r.usable / BELT_ALONG * 100)}%). Đọc ${fmt(p.rows / sensor.h * 100)}% số dòng sensor.` +
+      (r.stripFrom < 0 ? ` Đầu dải lọt vào khe máy ${fmt(-r.stripFrom)} mm, phần này không tính.` : '')]);
+    list.push([p.height <= p.machine ? 'ok' : 'warn', 'Điểm gá trên thân máy',
+      p.height <= p.machine ? `Thấp hơn đỉnh máy ${fmt(p.machine - p.height)} mm, gá thẳng được lên mặt máy.` : `Cao hơn đỉnh máy ${fmt(p.height - p.machine)} mm, cần cột gá nối dài.`]);
+    list.push(['warn', 'Phơi sáng', `Tối đa ${fmt(r.expoMs, 1)} ms để vệt mờ ≤1 px ở ${fmt(p.speed / 10)} cm/s. Cấu hình hiện lưu 60,9 ms, nên cần đèn mạnh hoặc đèn xung.`]);
+    if (p.cage) {
+      const issues = [];
+      if (p.cageH < p.height + 150) issues.push(`nóc lồng phải cao ít nhất ${fmt(p.height + 150)} mm để chứa camera và tay đỡ`);
+      if (p.cageLen < r.stripTo + 50) issues.push(`rèm phải cách mặt máy ít nhất ${fmt(r.stripTo + 50)} mm để không lọt vào dải quét`);
+      if (p.lampX > p.cageLen - 40 || p.lampH > p.cageH - 40) issues.push('đèn đang nằm ngoài lồng');
+      if (p.cageH > p.machine) issues.push('nóc lồng cao hơn đỉnh máy');
+      list.push([issues.length ? 'bad' : 'ok', 'Kích thước lồng', issues.length ? issues.join('; ') + '.'
+        : `Rèm cách dải quét ${fmt(p.cageLen - r.stripTo)} mm, nóc cách camera ${fmt(p.cageH - p.height)} mm.`]);
+      const lamp = lampInfo(p, r);
+      const state = lamp.inRoi || lamp.inView ? 'bad' : lamp.margin >= 30 ? 'ok' : 'warn';
+      list.push([state, 'Phản chiếu đèn trên kính', lamp.inView
+        ? 'Thanh đèn lọt vào vùng đọc của camera.'
+        : `Vệt phản chiếu cách mặt máy ${fmt(lamp.fromFace)} mm, ${lamp.inRoi ? 'nằm trong dải quét nên sẽ gây lóa' : Number.isFinite(lamp.margin) ? `ngoài dải quét ${fmt(lamp.margin)} mm` : 'ngoài vùng nhìn của camera'}.`]);
+    }
+    const good = list[0][0] !== 'bad';
+    document.getElementById('verdict').textContent = good
+      ? (pxN >= 2.8 ? `Phủ đủ 3,6 m với QR ${fmt(p.qr)} mm ở ${fmt(pxN, 1)} px/ô.` : `Phủ đủ 3,6 m, nhưng QR ${fmt(p.qr)} mm chỉ còn ${fmt(pxN, 1)} px/ô, thấp hơn mức 2,8 px/ô đã thử ở lab.`)
+      : `Chưa phủ đủ 3,6 m. QR đi qua giữa 2 camera hoặc sát mép có thể bị sót.`;
+  }
+  if (!r) document.getElementById('verdict').textContent = 'Chỉnh lại góc nghiêng để camera nhìn xuống băng.';
+  document.getElementById('checks').innerHTML = list.map(c =>
+    `<div class="check"><div class="chip ${c[0]}">${chips[c[0]]}</div><div><b>${c[1]}</b><span class="d">${c[2]}</span></div></div>`).join('');
+}
+document.getElementById('copy').addEventListener('click', e => {
+  const btn = e.currentTarget;
+  const done = t => { btn.textContent = t; setTimeout(() => { btn.textContent = 'Sao chép thông số'; }, 1500); };
+  const ok = navigator.clipboard && navigator.clipboard.writeText(specText);
+  if (ok) ok.then(() => done('Đã sao chép'), () => done('Trình duyệt chặn sao chép'));
+  else done('Trình duyệt chặn sao chép');
+});
+
+/* ---------- Cảnh 3D: trục X dọc hướng chạy (kính đi về -X), Z ngang băng, Y hướng lên, đơn vị mét ---------- */
+const TABLE_Y = 0.9, ALONG = BELT_ALONG / 1000, CROSS = BELT_CROSS / 1000, HALF_Z = CROSS / 2;
+const OVERLAY = 1;   // layer chỉ hiện ở khung nhìn chính, không hiện trong ảnh camera
+const stage = document.getElementById('stage');
+if (typeof THREE === 'undefined') {
+  stage.insertAdjacentHTML('beforeend', '<div class="err">Không tải được thư viện three.js. Hãy kiểm tra kết nối mạng rồi tải lại trang.</div>');
+  update3d = () => {};
+  update();
+  throw new Error('three.js not loaded');
+}
+var update3d;
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+stage.prepend(renderer.domElement);
+
+const scene = new THREE.Scene();
+const view = new THREE.PerspectiveCamera(38, 1, 0.05, 80);
+view.layers.enable(OVERLAY);
+const orbit = new THREE.OrbitControls(view, renderer.domElement);
+orbit.enableDamping = true;
+orbit.maxPolarAngle = Math.PI * 0.495;
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x6f7572, 0.62));
+const sun = new THREE.DirectionalLight(0xffffff, 0.5); sun.position.set(-3, 6, 4); scene.add(sun);
+
+const mat = (color, o = {}) => new THREE.MeshStandardMaterial(Object.assign({ color, roughness: 0.75, metalness: 0.1 }, o));
+function box(w, h, d, x, y, z, material, parent = scene) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
+  m.position.set(x, y, z); parent.add(m); return m;
+}
+const steel = mat(0x8f9a97, { metalness: 0.45, roughness: 0.5 });
+const dark = mat(0x2b3130);
+const paint = mat(0xb9c2bd);
+const paintDark = mat(0x9aa5a0);
+const trim = mat(0xd9a520);
+
+// Bàn con lăn phía trước mặt máy
+const FRAME_D = 0.12;
+[-1, 1].forEach(side => box(ALONG, FRAME_D, 0.07, -ALONG / 2, TABLE_Y - 0.09, side * (HALF_Z + 0.035), steel));
+box(0.07, FRAME_D, CROSS, -ALONG, TABLE_Y - 0.09, 0, steel);
+const rollerGeo = new THREE.CylinderGeometry(0.03, 0.03, CROSS, 18);
+for (let x = -0.1; x > -ALONG; x -= 0.2) {
+  const r = new THREE.Mesh(rollerGeo, dark);
+  r.rotation.x = Math.PI / 2; r.position.set(x, TABLE_Y - 0.03, 0); scene.add(r);
+}
+[[-ALONG + 0.06, -1], [-ALONG + 0.06, 1], [-0.06, -1], [-0.06, 1]].forEach(([x, s]) =>
+  box(0.08, TABLE_Y - 0.15, 0.08, x, (TABLE_Y - 0.15) / 2, s * (HALF_Z + 0.035), steel));
+
+// Thân máy gồm đế, khe ra kính và phần vỏ phía trên
+const MACH_X = 2.1, SLOT = 0.3;
+box(MACH_X, TABLE_Y - 0.05, CROSS + 0.5, MACH_X / 2, (TABLE_Y - 0.05) / 2, 0, paintDark);
+box(0.02, 0.05, CROSS + 0.5, 0.0, TABLE_Y - 0.075, 0, trim);
+box(MACH_X - 0.12, SLOT + 0.05, CROSS + 0.4, (MACH_X + 0.12) / 2, TABLE_Y + (SLOT - 0.05) / 2, 0, dark);
+[-1, 1].forEach(s => box(MACH_X, SLOT + 0.05, 0.25, MACH_X / 2, TABLE_Y + (SLOT - 0.05) / 2, s * (HALF_Z + 0.125), paint));
+const hood = new THREE.Mesh(new THREE.BoxGeometry(MACH_X, 1, CROSS + 0.5), paint);
+scene.add(hood);
+
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), mat(0xc6cdc9, { roughness: 0.95 }));
+floor.rotation.x = -Math.PI / 2; scene.add(floor);
+let grid = null;
+
+// Nhóm đối tượng phụ thuộc thông số, dựng lại mỗi lần đổi giá trị
+const dynamic = new THREE.Group(); scene.add(dynamic);
+const CAM_COLORS = { a: 0x0b7a86, b: 0xbd5314 };
+
+function disposeGroup(g) {
+  g.traverse(o => {
+    if (o.geometry) o.geometry.dispose();
+    if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => m.dispose());
+  });
+  g.clear();
+}
+function overlayOnly(o) { o.traverse(c => c.layers.set(OVERLAY)); return o; }
+const planeY = TABLE_Y + 0.004;
+
+function worldOf(zMm, fwd, off, standoff) {
+  return new THREE.Vector3(-(standoff + fwd) / 1000, planeY, (zMm + off) / 1000 - HALF_Z);
+}
+function quadMesh(c, color, opacity, y) {
+  const g = new THREE.BufferGeometry();
+  const pts = [c[0], c[1], c[2], c[0], c[2], c[3]].flatMap(v => [v.x, y, v.z]);
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+  g.computeVertexNormals();
+  return new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color, transparent: true, opacity, side: THREE.DoubleSide, depthWrite: false }));
+}
+function polyLine(points, color, opacity = 1, closed = false) {
+  const g = new THREE.BufferGeometry().setFromPoints(points);
+  const m = new THREE.LineBasicMaterial({ color, transparent: opacity < 1, opacity });
+  return closed ? new THREE.LineLoop(g, m) : new THREE.Line(g, m);
+}
+function footprint(zMm, side, vLow, vHigh) {
+  const s = sensorMm(SENSORS[p.sensor]);
+  const clampV = v => {
+    // Hàng sensor nằm trên đường chân trời thì kẹp lại để hình vẫn hữu hạn
+    const th = rad(p.pitch), maxV = (p.lens * Math.sin(th) - 0.04 * p.lens) / Math.cos(th || 1e-3);
+    return Math.cos(th) > 1e-3 ? Math.min(v, maxV) : v;
+  };
+  const vTop = clampV(vHigh);
+  const rays = [[-s.sw / 2, vLow], [s.sw / 2, vLow], [s.sw / 2, vTop], [-s.sw / 2, vTop]].map(([u, v]) => rayToPlane(p, u, v));
+  if (rays.some(c => !c)) return null;
+  return rays.map(c => worldOf(zMm, c.fwd, side * c.off, p.standoff));
+}
+// Trục nhìn và hướng lên của camera trong không gian thế giới. side: +1 nếu giữa băng ở phía +Z.
+function cameraAxes(side) {
+  const th = rad(p.pitch), toe = rad(p.toe);
+  const world = (fwd, down) => new THREE.Vector3(-fwd, -down * Math.cos(toe), side * down * Math.sin(toe));
+  return { axis: world(Math.cos(th), Math.sin(th)), up: world(Math.sin(th), -Math.cos(th)) };
+}
+function cameraPos(zMm) { return new THREE.Vector3(-p.standoff / 1000, TABLE_Y + p.height / 1000, zMm / 1000 - HALF_Z); }
+
+function buildIndustrialCamera(pos, color, axis, up) {
+  // Thân camera phóng to gấp 2 lần cho dễ nhìn, trục nhìn là +Z của nhóm
+  const g = new THREE.Group();
+  const shell = mat(color, { metalness: 0.5, roughness: 0.4 });
+  const blk = mat(0x15191a, { metalness: 0.5, roughness: 0.35 });
+  box(0.06, 0.06, 0.10, 0, 0, 0, shell, g);
+  box(0.062, 0.062, 0.012, 0, 0, -0.056, blk, g);
+  const add = (r1, r2, len, z, m) => {
+    const c = new THREE.Mesh(new THREE.CylinderGeometry(r1, r2, len, 24), m);
+    c.rotation.x = Math.PI / 2; c.position.z = z; g.add(c);
+  };
+  add(0.024, 0.024, 0.012, 0.056, blk);
+  add(0.027, 0.024, 0.075, 0.095, blk);
+  add(0.029, 0.029, 0.012, 0.128, steel);
+  g.position.copy(pos);
+  g.up.copy(up);
+  g.lookAt(pos.clone().add(axis));
+  return g;
+}
+function buildBracket(pos) {
+  // Thanh ngang từ mặt máy tới camera và ray đứng trên mặt máy
+  const m = mat(0x6d7774, { metalness: 0.5, roughness: 0.5 });
+  const g = new THREE.Group();
+  const arm = Math.max(pos.x * -1, 0.001);
+  box(arm, 0.03, 0.03, -arm / 2, pos.y + 0.05, pos.z, m, g);
+  box(0.03, 0.05, 0.03, pos.x, pos.y + 0.03, pos.z, m, g);
+  const railTop = Math.max(pos.y + 0.12, TABLE_Y + SLOT + 0.2);
+  const railLow = Math.min(pos.y - 0.12, TABLE_Y + SLOT + 0.02);
+  box(0.03, railTop - railLow, 0.06, -0.015, (railTop + railLow) / 2, pos.z, m, g);
+  return g;
+}
+
+const labels = {};
+function label(key, text, pos, cls = '') {
+  let el = labels[key];
+  if (!el) {
+    el = { node: document.createElement('div') };
+    el.node.className = 'lb ' + cls;
+    stage.appendChild(el.node);
+    labels[key] = el;
+  }
+  el.node.textContent = text; el.pos = pos;
+  return el;
+}
+function dim(a, b, color = 0x4a5552) {
+  const dir = b.clone().sub(a).normalize();
+  const tick = new THREE.Vector3(-dir.z, 0, dir.x).multiplyScalar(0.05);
+  if (tick.lengthSq() < 1e-6) tick.set(0.05, 0, 0);
+  const g = new THREE.Group();
+  g.add(polyLine([a, b], color));
+  g.add(polyLine([a.clone().sub(tick), a.clone().add(tick)], color));
+  g.add(polyLine([b.clone().sub(tick), b.clone().add(tick)], color));
+  return g;
+}
+
+const pipCams = { a: new THREE.PerspectiveCamera(), b: new THREE.PerspectiveCamera() };
+
+/* ---------- Lồng che sáng: khung luôn đậm để đọc vị trí, tấm che và rèm chỉnh được độ đậm ---------- */
+const cageGroup = new THREE.Group(); scene.add(cageGroup);
+let curtain = [];
+const CAGE_SIDE_Z = HALF_Z + 0.08;   // ngoài khung bàn và ngoài dải đọc của camera
+const LAMP_LEN = LAMP_LEN_MM / 1000;
+
+function buildCage(r) {
+  disposeGroup(cageGroup);
+  curtain = [];
+  if (!p.cage) {
+    ['cageRem', 'cageLamp', 'cageGlare'].forEach(k => label(k, '', new THREE.Vector3()));
+    return;
+  }
+  const L = p.cageLen / 1000, top = TABLE_Y + p.cageH / 1000, bottom = TABLE_Y - 0.15;
+  const opacity = p.cageOpacity / 100, solid = opacity >= 0.99;
+  const frame = mat(0x3f4a4b, { metalness: 0.5, roughness: 0.45 });
+  const panel = mat(0x262d2e, { transparent: !solid, opacity, depthWrite: solid, side: THREE.DoubleSide, roughness: 0.9 });
+  const strip = mat(0x1b2021, { transparent: true, opacity: Math.min(1, opacity * 1.2 + 0.06), depthWrite: false, side: THREE.DoubleSide, roughness: 0.6 });
+  const P = 0.04, h = top - bottom, midY = (top + bottom) / 2;
+
+  box(L, 0.006, CAGE_SIDE_Z * 2, -L / 2, top, 0, panel, cageGroup);
+  [-1, 1].forEach(side => {
+    const z = side * CAGE_SIDE_Z;
+    box(L, h, 0.006, -L / 2, midY, z, panel, cageGroup);
+    box(P, h, P, -L, midY, z, frame, cageGroup);
+    box(P, h, P, -P / 2, midY, z, frame, cageGroup);
+    box(L, P, P, -L / 2, top, z, frame, cageGroup);
+    box(L, P, P, -L / 2, bottom, z, frame, cageGroup);
+  });
+  box(P, P, CAGE_SIDE_Z * 2, -L, top, 0, frame, cageGroup);
+  box(P, P, CAGE_SIDE_Z * 2, -P / 2, top, 0, frame, cageGroup);
+
+  // Rèm dải mềm treo ở thanh trước, mỗi dải có khớp ở đỉnh để bị kính đẩy ra
+  const pitch = 0.1, drop = top - P / 2 - (TABLE_Y + 0.012);
+  const stripGeo = new THREE.BoxGeometry(0.004, drop, pitch + 0.015);
+  for (let z = -CAGE_SIDE_Z + pitch / 2; z < CAGE_SIDE_Z; z += pitch) {
+    const hinge = new THREE.Group();
+    hinge.position.set(-L, top - P / 2, z);
+    const m = new THREE.Mesh(stripGeo, strip);
+    m.position.y = -drop / 2;
+    hinge.add(m);
+    cageGroup.add(hinge);
+    curtain.push({ hinge, z });
+  }
+  label('cageRem', 'Rèm dải mềm', new THREE.Vector3(-L, top - 0.2, -HALF_Z + 0.45));
+
+  // Hai thanh đèn trong lồng, mỗi thanh ứng với một camera và chúc về giữa dải quét
+  const lx = -p.lampX / 1000, ly = TABLE_Y + p.lampH / 1000, gy = planeY + 0.003;
+  const tx = r ? -(Math.max(0, r.stripFrom) + r.stripTo) / 2000 : lx;
+  const lampBody = mat(0x20262a, { metalness: 0.5, roughness: 0.4 });
+  const lampFace = new THREE.MeshStandardMaterial({ color: 0xfff4d0, emissive: 0xffe9a8, emissiveIntensity: 1 });
+  const rod = mat(0x6d7774, { metalness: 0.5, roughness: 0.5 });
+  [p.edge, BELT_CROSS - p.edge].forEach(zMm => {
+    const zc = zMm / 1000 - HALF_Z;
+    const z1 = Math.max(-HALF_Z, zc - LAMP_LEN / 2), z2 = Math.min(HALF_Z, zc + LAMP_LEN / 2);
+    const bar = new THREE.Group();
+    bar.position.set(lx, ly, (z1 + z2) / 2);
+    bar.rotation.z = Math.atan2(tx - lx, ly - gy);
+    box(0.07, 0.05, z2 - z1, 0, 0.025, 0, lampBody, bar);
+    box(0.055, 0.008, z2 - z1 - 0.02, 0, -0.003, 0, lampFace, bar);
+    cageGroup.add(bar);
+    [z1 + 0.2, z2 - 0.2].forEach(z => box(0.012, top - ly, 0.012, lx, (top + ly) / 2, z, rod, cageGroup));
+    const fan = new THREE.BufferGeometry();
+    fan.setAttribute('position', new THREE.Float32BufferAttribute(
+      [lx, ly, z1, lx, ly, z2, tx, gy, z2, lx, ly, z1, tx, gy, z2, tx, gy, z1], 3));
+    cageGroup.add(new THREE.Mesh(fan, new THREE.MeshBasicMaterial({ color: 0xffe08a, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false })));
+  });
+  label('cageLamp', 'Đèn', new THREE.Vector3(lx, ly + 0.1, p.edge / 1000 - HALF_Z));
+
+  // Vạch vệt phản chiếu đèn trên kính: đỏ khi lọt vào dải quét
+  if (r) {
+    const lamp = lampInfo(p, r), xg = -lamp.fromFace / 1000;
+    cageGroup.add(polyLine([new THREE.Vector3(xg, gy + 0.004, -HALF_Z), new THREE.Vector3(xg, gy + 0.004, HALF_Z)], lamp.inRoi ? 0xd93025 : 0xe0a100));
+    label('cageGlare', 'Vệt phản chiếu đèn', new THREE.Vector3(xg, gy, HALF_Z - 0.3));
+  } else label('cageGlare', '', new THREE.Vector3());
+  overlayOnly(cageGroup);
+}
+
+update3d = function (r) {
+  hood.scale.y = Math.max(p.machine / 1000 - SLOT, 0.1);
+  hood.position.set(MACH_X / 2, TABLE_Y + SLOT + hood.scale.y / 2, 0);
+  disposeGroup(dynamic);
+  buildCage(r);
+
+  const s = sensorMm(SENSORS[p.sensor]), vh = halfCrop(p);
+  [['a', p.edge, 1], ['b', BELT_CROSS - p.edge, -1]].forEach(([k, zMm, side]) => {
+    const pos = cameraPos(zMm), color = CAM_COLORS[k];
+    const { axis, up } = cameraAxes(side);
+    const pc = pipCams[k];
+    pc.fov = 2 * deg(Math.atan(s.sh / 2 / p.lens)); pc.aspect = s.sw / s.sh; pc.near = 0.05; pc.far = 40;
+    pc.position.copy(pos); pc.up.copy(up); pc.lookAt(pos.clone().add(axis)); pc.updateProjectionMatrix();
+
+    dynamic.add(overlayOnly(buildIndustrialCamera(pos, color, axis, up)));
+    dynamic.add(overlayOnly(buildBracket(pos)));
+    label('cam' + k, 'CAM ' + k.toUpperCase(), pos.clone().add(new THREE.Vector3(0, 0.16, 0)), k);
+
+    const full = footprint(zMm, side, -s.sh / 2, s.sh / 2);
+    if (full) dynamic.add(overlayOnly(polyLine(full.map(v => v.clone().setY(planeY + 0.002)), color, 0.55, true)));
+    const crop = footprint(zMm, side, -vh, vh);
+    if (crop) {
+      dynamic.add(overlayOnly(quadMesh(crop, color, 0.28, planeY + 0.004)));
+      dynamic.add(overlayOnly(polyLine(crop.map(v => v.clone().setY(planeY + 0.005)), color, 1, true)));
+      crop.forEach(c => dynamic.add(overlayOnly(polyLine([pos, c], color, 0.4))));
+    }
+    // Bóng chiếu camera xuống mặt máy để đọc chiều cao
+    const foot = pos.clone().setY(planeY);
+    dynamic.add(overlayOnly(polyLine([pos, foot], 0x4a5552, 0.8)));
+  });
+
+  // Kích thước băng và vị trí lắp
+  const dimZ = HALF_Z + 0.2, dimX = -ALONG - 0.2, y = TABLE_Y + 0.01;
+  dynamic.add(overlayOnly(dim(new THREE.Vector3(-ALONG, y, dimZ), new THREE.Vector3(0, y, dimZ))));
+  label('along', '2,5 m', new THREE.Vector3(-ALONG / 2, y, dimZ + 0.12));
+  dynamic.add(overlayOnly(dim(new THREE.Vector3(dimX, y, -HALF_Z), new THREE.Vector3(dimX, y, HALF_Z))));
+  label('cross', '3,6 m', new THREE.Vector3(dimX - 0.16, y, 0));
+  const camA = cameraPos(p.edge), hPos = cameraPos(BELT_CROSS - p.edge);
+  const spanY = new THREE.Vector3(0, 0.3, 0);
+  dynamic.add(overlayOnly(dim(camA.clone().add(spanY), hPos.clone().add(spanY))));
+  label('spacing', fmt(p.spacing / 1000, 2) + ' m', camA.clone().add(hPos).multiplyScalar(0.5).add(spanY));
+  label('height', 'H ' + fmt(p.height / 1000, 2) + ' m', new THREE.Vector3(hPos.x - 0.03, TABLE_Y + p.height * 0.7 / 1000, hPos.z + 0.04));
+  if (r) label('strip', 'Dải quét ' + fmt(r.usable / 1000, 2) + ' m', new THREE.Vector3(-(Math.max(0, r.stripFrom) + r.stripTo) / 2000, y, 0));
+  else label('strip', '', new THREE.Vector3());
+
+  // Mũi tên hướng chạy, nối theo mũi tên trong hình vẽ
+  const arrowY = TABLE_Y + 0.02, arrowZ = -HALF_Z - 0.35;
+  dynamic.add(overlayOnly(polyLine([new THREE.Vector3(-0.5, arrowY, arrowZ), new THREE.Vector3(-1.8, arrowY, arrowZ)], 0x2f4f46)));
+  dynamic.add(overlayOnly(polyLine([new THREE.Vector3(-1.65, arrowY, arrowZ - 0.08), new THREE.Vector3(-1.8, arrowY, arrowZ), new THREE.Vector3(-1.65, arrowY, arrowZ + 0.08)], 0x2f4f46)));
+  label('dir', 'Hướng kính ra', new THREE.Vector3(-1.15, arrowY, arrowZ - 0.14));
+
+  const crop = 100 * (1 - p.rows / SENSORS[p.sensor].h) / 2;
+  document.querySelectorAll('.pip .mask').forEach(m => { m.style.height = crop + '%'; });
+  document.querySelectorAll('.pip').forEach(el => { el.style.aspectRatio = `${SENSORS[p.sensor].w} / ${SENSORS[p.sensor].h}`; });
+  resetSim();
+};
+
+/* ---------- Mô phỏng kính chạy: QR rải ngẫu nhiên, đếm QR lọt vào vùng đọc ---------- */
+function qrTexture() {
+  const n = 21, px = 8, cv = document.createElement('canvas');
+  cv.width = cv.height = (n + 2) * px;
+  const c = cv.getContext('2d');
+  c.fillStyle = '#fff'; c.fillRect(0, 0, cv.width, cv.height);
+  c.fillStyle = '#000';
+  let seed = 7;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const inFinder = (x, y) => (x < 8 && y < 8) || (x > 12 && y < 8) || (x < 8 && y > 12);
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (!inFinder(x, y) && rnd() > 0.5) c.fillRect((x + 1) * px, (y + 1) * px, px, px);
+  [[0, 0], [14, 0], [0, 14]].forEach(([x, y]) => {
+    c.fillRect((x + 1) * px, (y + 1) * px, 7 * px, 7 * px);
+    c.fillStyle = '#fff'; c.fillRect((x + 2) * px, (y + 2) * px, 5 * px, 5 * px);
+    c.fillStyle = '#000'; c.fillRect((x + 3) * px, (y + 3) * px, 3 * px, 3 * px);
+  });
+  const t = new THREE.CanvasTexture(cv);
+  t.magFilter = THREE.NearestFilter; t.encoding = THREE.sRGBEncoding;
+  return t;
+}
+const stickerMat = new THREE.MeshBasicMaterial({ map: qrTexture() });
+const glassMat = new THREE.MeshStandardMaterial({ color: 0xa9d6e0, transparent: true, opacity: 0.3, roughness: 0.08, metalness: 0.1, depthWrite: false });
+const ringGeo = new THREE.RingGeometry(0.07, 0.09, 28);
+const sheets = [];
+const sim = { seen: 0, passed: 0 };
+
+function spawn(sh, extra) {
+  const q = p.qr / 1000;
+  const zQr = q / 2 + Math.random() * (CROSS - q);
+  const w = 1.2 + Math.random() * 1.2, len = 0.9 + Math.random() * 0.7;
+  const zc = clamp(zQr, w / 2, CROSS - w / 2);
+  sh.len = len; sh.zQr = zQr; sh.x = 0.6 + len / 2 + extra; sh.seen = false; sh.counted = false;
+  sh.mesh.scale.set(len, 1, w);
+  sh.mesh.position.set(sh.x, TABLE_Y + 0.006, zc - HALF_Z);
+  sh.sticker.scale.set(q, q, 1);
+  sh.sticker.position.z = zQr - HALF_Z;
+  sh.ring.position.z = zQr - HALF_Z;
+}
+for (let i = 0; i < 3; i++) {
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 0.008, 1), glassMat);
+  const sticker = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), stickerMat);
+  sticker.rotation.x = -Math.PI / 2;
+  const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0x6d7774, side: THREE.DoubleSide, transparent: true, opacity: 0.9 }));
+  ring.rotation.x = -Math.PI / 2;
+  ring.layers.set(OVERLAY);
+  scene.add(mesh, sticker, ring);
+  sheets.push({ mesh, sticker, ring });
+}
+function resetSim() {
+  sim.seen = 0; sim.passed = 0;
+  sheets.forEach((sh, i) => spawn(sh, i * 1.6));
+}
+function qrInCrop(xWorld, zMm) {
+  // QR phải nằm trọn trong vùng đọc của ít nhất một camera: kiểm tra 4 góc
+  const s = sensorMm(SENSORS[p.sensor]), vh = halfCrop(p), half = p.qr / 2;
+  return [[p.edge, 1], [BELT_CROSS - p.edge, -1]].some(([zc, side]) => [[-1, -1], [1, -1], [1, 1], [-1, 1]].every(([a, b]) => {
+    const pr = projectToSensor(p, -xWorld * 1000 - p.standoff + a * half, side * (zMm + b * half - zc));
+    return pr && Math.abs(pr.u) <= s.sw / 2 && Math.abs(pr.v) <= vh;
+  }));
+}
+const reduceMotion = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+let playing = !reduceMotion;
+const playBtn = document.getElementById('play');
+playBtn.textContent = playing ? 'Tạm dừng' : 'Chạy kính';
+playBtn.addEventListener('click', () => { playing = !playing; playBtn.textContent = playing ? 'Tạm dừng' : 'Chạy kính'; });
+const simEl = document.getElementById('sim');
+
+function stepSim(dt) {
+  const dx = p.speed / 1000 * SIM_SPEEDUP * dt;
+  sheets.forEach(sh => {
+    sh.x -= dx;
+    sh.mesh.position.x = sh.x;
+    sh.sticker.position.set(sh.x, TABLE_Y + 0.0125, sh.zQr - HALF_Z);
+    sh.ring.position.set(sh.x, TABLE_Y + 0.013, sh.zQr - HALF_Z);
+    sh.ring.visible = sh.x < 0.05;
+    const inside = sh.x < 0 && qrInCrop(sh.x, sh.zQr * 1000);
+    if (inside && !sh.seen) { sh.seen = true; }
+    sh.ring.material.color.setHex(inside ? 0x1fae5e : sh.seen ? 0x1d7a46 : 0x6d7774);
+    if (sh.x <= -ALONG && !sh.counted) {
+      sh.counted = true; sim.passed++; if (sh.seen) sim.seen++;
+    }
+    if (sh.x + sh.len / 2 < -ALONG - 0.4) {
+      const last = Math.max(...sheets.map(o => o.x));
+      spawn(sh, Math.max(0, last - 0.6 + 0.5) + 1.2 * Math.random());
+    }
+  });
+  const curtainX = -p.cageLen / 1000;
+  curtain.forEach(s => {
+    const pushed = sheets.some(sh => Math.abs(sh.x - curtainX) < sh.len / 2 && Math.abs(sh.mesh.position.z - s.z) < sh.mesh.scale.z / 2 + 0.05);
+    s.hinge.rotation.z += ((pushed ? -0.2 : 0) - s.hinge.rotation.z) * Math.min(1, dt * 6);
+  });
+  simEl.textContent = `QR thấy được ${sim.seen}/${sim.passed} · tua ×${SIM_SPEEDUP}`;
+}
+
+/* ---------- Khung nhìn và vòng lặp vẽ ---------- */
+const VIEWS = {
+  sketch: { pos: [-5.6, 4.7, 6.2], target: [-0.3, 1.1, 0] },
+  top: { pos: [-1.2, 8.8, 0.01], target: [-1.2, 0.9, 0] },
+  side: { pos: [-1.0, 1.7, 8.8], target: [-0.7, 1.3, 0] },
+};
+function setView(name) {
+  const v = VIEWS[name];
+  // Màn hình hẹp thì lùi camera ra xa để vẫn thấy đủ băng và thân máy
+  const k = Math.max(1, 1.45 / view.aspect);
+  orbit.target.set(...v.target);
+  view.position.set(...v.pos).sub(orbit.target).multiplyScalar(k).add(orbit.target);
+  orbit.update();
+}
+['sketch', 'top', 'side'].forEach(n => document.getElementById('v-' + n).addEventListener('click', () => setView(n)));
+
+function applyTheme() {
+  const css = getComputedStyle(document.documentElement);
+  scene.background = new THREE.Color(css.getPropertyValue('--scene').trim());
+  floor.material.color.set(css.getPropertyValue('--floor').trim());
+  if (grid) { scene.remove(grid); grid.geometry.dispose(); grid.material.dispose(); }
+  const gc = css.getPropertyValue('--grid').trim();
+  grid = new THREE.GridHelper(20, 20, gc, gc); grid.position.y = 0.002; scene.add(grid);
+}
+new MutationObserver(applyTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+if (window.matchMedia) matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
+
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  renderer.setSize(w, h, true);
+  view.aspect = w / h; view.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stage);
+
+function placeLabels(w, h) {
+  const v = new THREE.Vector3();
+  Object.values(labels).forEach(l => {
+    v.copy(l.pos).project(view);
+    const show = v.z < 1 && l.node.textContent;
+    l.node.hidden = !show;
+    if (show) l.node.style.transform = `translate(-50%, -50%) translate(${((v.x + 1) / 2 * w).toFixed(1)}px, ${((1 - v.y) / 2 * h).toFixed(1)}px)`;
+  });
+}
+const pipA = document.getElementById('pip-a'), pipB = document.getElementById('pip-b');
+function renderPip(el, cam, stageRect) {
+  const b = el.getBoundingClientRect();
+  const x = b.left - stageRect.left + el.clientLeft, y = b.top - stageRect.top + el.clientTop;
+  const w = el.clientWidth, h = el.clientHeight;
+  renderer.setViewport(x, stageRect.height - y - h, w, h);
+  renderer.setScissor(x, stageRect.height - y - h, w, h);
+  renderer.render(scene, cam);
+}
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min((now - last) / 1000, 0.05); last = now;
+  if (playing) stepSim(dt); else if (!simEl.textContent) stepSim(0);
+  orbit.update();
+  const rect = stage.getBoundingClientRect();
+  renderer.setScissorTest(false);
+  renderer.setViewport(0, 0, rect.width, rect.height);
+  renderer.render(scene, view);
+  renderer.setScissorTest(true);
+  renderPip(pipA, pipCams.a, rect);
+  renderPip(pipB, pipCams.b, rect);
+  placeLabels(rect.width, rect.height);
+  requestAnimationFrame(frame);
+}
+
+/* ---------- Đồng bộ thông số ---------- */
+function update() {
+  p.edge = (BELT_CROSS - p.spacing) / 2;
+  if (p.auto) p.tilt = clamp(Math.round(autoPitch(p, targetWidth(p)) * 10) / 10 - 90, -70, 30);
+  p.pitch = 90 + p.tilt;
+  const r = compute(p);
+  Object.entries(ctlEls).forEach(([k, c]) => {
+    if (k === 'rows') c.input.max = SENSORS[p.sensor].h;
+    c.input.value = p[k]; c.out.textContent = c.show(p[k]);
+  });
+  ctlEls.tilt.input.disabled = p.auto;
+  document.getElementById('auto').checked = p.auto;
+  document.getElementById('show-cage').checked = p.cage;
+  document.getElementById('cage-btn').textContent = p.cage ? 'Ẩn lồng' : 'Hiện lồng';
+  lensSel.value = p.lens; sensorSel.value = p.sensor;
+  renderPanel(r);
+  renderCal();
+  renderLensTable();
+  update3d(r);
+}
+
+applyTheme();
+resize();
+setView('sketch');
+update();
+requestAnimationFrame(frame);
+</script>

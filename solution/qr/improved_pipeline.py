@@ -103,6 +103,14 @@ class ImprovePipeline:
     def device(self) -> str:
         return getattr(self._detector, "device", "cpu")
 
+    @property
+    def gpu_available(self) -> bool:
+        return getattr(self._detector, "gpu_available", False)
+
+    def set_device(self, device: str):
+        """"auto", "cpu" hoặc "cuda:N" — đổi được lúc đang chạy, chỉ ảnh hưởng bước detect."""
+        self._detector.set_device(device)
+
     def warmup(self, shape: tuple[int, int] = (768, 2448)):
         """Chạy detect một lần để lần đầu trên GPU không rơi vào frame thật."""
         self._detector.warmup(shape)

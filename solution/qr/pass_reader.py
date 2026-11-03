@@ -47,6 +47,7 @@ class FrameResult:
     detect_ms: float
     cascade_ms: float
     finished: list[Track] = field(default_factory=list)   # lượt vừa kết thúc
+    first_reads: list[Track] = field(default_factory=list)   # lượt vừa có nội dung lần đầu
 
     @property
     def results(self) -> list[str]:
@@ -74,6 +75,7 @@ class PassReader:
         self._min_votes = min_votes
         self._recheck_every = recheck_every
         self._skips: dict[int, int] = {}         # track_id → số lần bỏ cascade liên tiếp
+        self._announced: set[int] = set()        # track_id đã báo trong first_reads, lượt còn mở
         self._last_idx: int | None = None
         self._shape: tuple[int, int] | None = None
 
@@ -113,8 +115,10 @@ class PassReader:
             overlays.append(Overlay(quad, text is not None, velocity, frame_idx, shape))
         t2 = time.perf_counter()
         finished += self._close(self._tracker.update(frame_idx, observations))
+        first_reads = [t for t in self._tracker.active if t.text and t.track_id not in self._announced]
+        self._announced.update(t.track_id for t in first_reads)
         return FrameResult(detections, texts, overlays, skipped,
-                           (t1 - t0) * 1000.0, (t2 - t1) * 1000.0, finished)
+                           (t1 - t0) * 1000.0, (t2 - t1) * 1000.0, finished, first_reads)
 
     def flush(self) -> list[Track]:
         """Đóng mọi lượt đang mở (dừng decode / đóng app)."""
@@ -128,6 +132,7 @@ class PassReader:
     def _close(self, tracks: list[Track]) -> list[Track]:
         for t in tracks:
             self._skips.pop(t.track_id, None)
+            self._announced.discard(t.track_id)
             logger.info("pass_finished id=%d text=%s votes=%d observations=%d conflicting=%s",
                         t.track_id, t.text, t.votes, t.observations, t.conflicting)
         return tracks

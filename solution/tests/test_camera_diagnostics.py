@@ -152,7 +152,9 @@ with patch.dict(sys.modules, {"mvsdk": sdk}):
 CameraManager = manager_module.CameraManager
 
 qr = types.ModuleType("qr")
-qr.ImprovePipeline = type("UnusedPipeline", (), {"device": "cpu"})
+qr.ImprovePipeline = type("UnusedPipeline", (), {"__init__": lambda self, **k: None, "device": "cpu",
+                                                 "gpu_available": False,
+                                                 "set_device": lambda self, device: None})
 qr.PassReader = type("UnusedReader", (), {"__init__": lambda self, *a, **k: None,
                                            "warmup": lambda self: None,
                                            "flush": lambda self: []})

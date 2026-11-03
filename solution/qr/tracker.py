@@ -70,6 +70,11 @@ class PassTracker:
         self._active: list[Track] = []
         self._next_id = 0
 
+    @property
+    def active(self) -> list[Track]:
+        """Các lượt đang mở."""
+        return list(self._active)
+
     def match(self, frame_idx: int, observations: list[Observation]) -> dict[int, Track]:
         """Observation thứ i sẽ ghép vào track nào nếu gọi ``update`` ngay — không đổi trạng thái."""
         live = [t for t in self._active if frame_idx - t.last_frame <= self.max_gap]

@@ -45,6 +45,25 @@ Camera dùng MindVision `mvsdk`: `CameraSdkInit → CameraEnumerateDevice → Ca
 
 **ImprovePipeline** (không dùng SR/Real-ESRGAN, tối ưu cho QR nhỏ ~60px trên frame 2448×2048): detect qrdet với `imgsz=1280` (640 mặc định bỏ sót QR nhỏ) → cascade trên ROI cắt từ ảnh gốc, rẻ trước đắt sau: ROI×4 → zxing; warp 256 + Quiet Zone → zxing; CLAHE×4 → WeChat; stretch×4 → WeChat CNN+SR; ROI×3 → WeChat CNN+SR. Model WeChat ONNX (OpenCV 5 không load caffemodel) ở `qr/models/wechat/`; thiếu model thì bỏ qua bước CNN. Không dùng pyzbar/`decode_parallel` trong pipeline (yếu với QR ~2px/module, chậm). Test: `python tests/test_small_qr.py` (dùng frame mẫu `../images/*.bmp`, kỳ vọng ≥12/14).
 
+## Phiên bản demo (`python main_demo.py`, gói `demo_ui/`)
+
+Bản riêng cho khách hàng, không thay app test camera: `main.py` + `ui/` giữ nguyên hành vi. `demo_ui/` chỉ phụ thuộc một chiều vào `ui/` (form `main_window_ui`, `frame_to_qimage`, `draw_overlays`, `DecodeWorker`); `ui/` không biết gì về `demo_ui/`. Sửa `ui/main_window.py` thì chạy cả `test_demo_*` và `test_workspace_ui`.
+
+```
+demo_ui/main_window.py     → lắp ráp; DecodeWorker kế thừa ui/ (thêm reads, flushed, ready, request_flush)
+demo_ui/workspace.py       → màn hình làm việc, chỉ nhận dữ liệu để hiển thị, không gọi SDK
+demo_ui/settings_window.py → cửa sổ Cấu hình 2 tab (non-modal): kết nối camera, băng chuyền
+demo_ui/run_controller.py  → máy trạng thái Bắt đầu/Dừng, mở camera trên thread nền
+demo_ui/session_stats.py   → số liệu phiên (thuần Python)
+demo_ui/app_settings.py    → JSON `config/app_settings.json`, kiểm tra hợp lệ từng trường
+demo_ui/theme.py           → bảng màu + QSS
+demo_ui/scan_uploader.py   → ScanUploader: hàng đợi + thread nền gửi `PUT {upload_base_url}/{nội dung QR URL-encode}`
+```
+
+**Gửi QR lên server:** `on_reads_done` (đọc lần đầu của lượt) gọi `ScanUploader.submit`. Mã chờ hoặc đã gửi trong 30 giây bị bỏ qua; lỗi mạng/5xx thử lại 3 lần (1s, 2s, 4s), 4xx không thử lại, 409 coi như đã nhận; hàng đợi 500 mục, đầy thì bỏ mục cũ nhất. Thất bại không nhớ là đã gửi. Tắt bằng `upload_enabled=false` trong `config/app_settings.json`. `MainWindow(settings_path=None)` không tạo uploader (test không gọi mạng thật); test truyền uploader giả qua tham số `uploader`.
+
+`Ui_MainWindow.setupUi` vẫn tạo widget cũ, `_setup_shell` chuyển `label_image` vào `Workspace`, `frame_camera_list` và `status_bar` vào `SettingsWindow`; phần còn lại của form (`frame_area`…) bị hủy cùng central widget cũ nên không được đụng tới. `MainWindow(settings_path=None)` không đọc/ghi file (dùng trong test); `main_demo.py` truyền `DEFAULT_SETTINGS_PATH`. Bắt đầu: thread nền chạy tìm camera → `open` → trigger liên tục → `apply_run_settings(RunSettings)` (AE tắt, exposure + gain cố định, FPS cao nhất, vùng đọc x/y qua `set_sensor_window`) → `configured` → chờ `worker.ready` → RUNNING. KHÔNG nạp Param khi Bắt đầu: Param A lưu gain 10, nạp ngay sau `open` rồi tắt AE làm ảnh tối đi khoảng 3 lần và không đọc được QR. Mặc định exposure 12,9 ms, gain 40; decode mỗi `DECODE_EVERY_N` = 5 frame. **Mở** ở tab Kết nối cũng áp dụng ngay cấu hình này. Bản demo không có quay video. Ô **Dùng GPU** (tab Băng chuyền, lưu `use_gpu`) gọi `ImprovePipeline.set_device("auto"/"cpu")`, đổi được lúc đang chạy và chỉ ảnh hưởng bước detect; máy không có CUDA thì ô bị vô hiệu hóa và giữ nguyên giá trị đã lưu. CUDA lỗi lúc chạy thì detector tự về CPU trong khi ô vẫn tích (chân màn hình hiện CPU); tắt rồi bật lại ô để thử lại GPU. Khi CONNECTING, GUI không gọi getter SDK. Số liệu: `reads` (từ `FrameResult.first_reads`) thêm dòng ngay, `passes` chốt trạng thái, ghép theo `track_id`. Reset/Dừng dùng `request_flush(purpose)`: chốt lượt trên thread worker rồi phát `flushed`; signal cùng thread đến theo thứ tự nên GUI xóa lúc nhận `flushed` không bị kết quả cũ chen vào. Lượt không nội dung và <2 observation là nhiễu, không tính vào tỉ lệ.
+
 ## Ràng buộc
 
 - Không thêm `basicsr`/`realesrgan` vào `solution/`.

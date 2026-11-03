@@ -48,6 +48,19 @@ def moving(n, y=300, start=100, step=45):
 
 
 class PassReaderTests(unittest.TestCase):
+    def test_first_reads_announces_track_once_when_text_appears(self):
+        pipe = FakePipeline(moving(4), [None, "A", "A"])
+        reader = PassReader(pipe)
+        results = [reader.process(IMG, i) for i in range(4)]
+        self.assertEqual(results[0].first_reads, [])
+        self.assertEqual([t.text for t in results[1].first_reads], ["A"])
+        self.assertEqual([results[2].first_reads, results[3].first_reads], [[], []])
+        self.assertEqual(reader.flush()[0].track_id, results[1].first_reads[0].track_id)
+
+    def test_first_reads_covers_track_started_on_this_frame(self):
+        reader = PassReader(FakePipeline(moving(1), ["A"]))
+        self.assertEqual([t.text for t in reader.process(IMG, 0).first_reads], ["A"])
+
     def test_confirmed_track_skips_cascade_and_reuses_text(self):
         pipe = FakePipeline(moving(3), ["A"])
         reader = PassReader(pipe)

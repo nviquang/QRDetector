@@ -86,6 +86,36 @@ python main.py
    - Các control cấu hình camera bị khóa trong phiên ghi; bật/tắt decode hoặc quad vẫn dùng được. Với software-trigger, dùng nút **Soft trigger** trong panel quay (gửi lệnh bất đồng bộ tới capture thread). Stop/đóng camera chạy bất đồng bộ; chỉ coi file hoàn tất khi finalize thành công.
    - Nhãn riêng hiển thị số frame **gửi ghi thành công**, camera lost delta (hoặc “không xác định”), thời gian đã quay, đường dẫn file và lỗi. Số Push thành công không chứng minh số frame thực tế trong AVI.
 
+## Phiên bản demo cho khách hàng
+
+Bản riêng, chạy song song với app test camera ở trên; hai bản dùng chung camera nên không mở cùng lúc.
+
+```bash
+cd solution
+python main_demo.py
+```
+
+**Màn hình làm việc**
+
+- **Bắt đầu** — tự tìm camera đã lưu → mở camera → áp dụng exposure, gain và dải đọc trong Cấu hình → chờ warm-up → decode (khi **Bật decode** đang bật). Lỗi ở bước nào thì báo đúng bước đó trong vùng video, kèm **Thử lại** và **Mở Cấu hình**.
+- **Dừng** — đóng camera, giữ nguyên số liệu; **Bắt đầu** lại sẽ chạy tiếp phiên đó. **Reset phiên** đưa số liệu về 0 (có hỏi xác nhận).
+- **Mã vừa đọc** và danh sách mã cập nhật ngay khi đọc được. Trạng thái dòng chốt khi lượt kết thúc (mất dấu khoảng 2 giây): `…` đang chờ, `✓` đọc được, `⚠` có mâu thuẫn, dòng đỏ là không đọc được.
+- **Đã đọc / Tỉ lệ đọc / Mã/phút** chỉ tính trên lượt đã kết thúc. Lượt không đọc được và chỉ có 1 detection coi là nhận nhầm: không hiện, không tính vào tỉ lệ, vẫn có trong log `pass_finished`. Vì vậy tỉ lệ này có thể khác nhãn "Lượt QR" của app test camera.
+- Không có frame mới quá 3 giây khi đang chạy → hiện "Mất tín hiệu camera". Không tự kết nối lại.
+- **F11** bật/tắt toàn màn hình, **Esc** thoát toàn màn hình.
+
+**Cấu hình** (nút ⚙ hoặc `Ctrl+,`): cửa sổ riêng, không chặn màn hình chính, đóng lại không làm dừng hệ thống.
+
+- **Kết nối camera:** chọn camera, quét lại, **Mở** / **Đóng**. Bấm **Mở** để xem trước với đúng exposure và gain sẽ dùng khi chạy mà chưa decode (nhãn `CHỈNH CAMERA`).
+- **Băng chuyền:** **Bật decode**, **Vẽ quad**, **Exposure (ms)**, **Gain**, **Chỉ đọc dải y** (y, cao), **Chỉ đọc dải x** (x, rộng), nút **Áp dụng** để đổi ngay khi camera đang mở. Dải đọc được căn bội 16.
+- Exposure dài hơn thì ảnh sáng hơn nhưng QR trên băng nhòe hơn; gain cao hơn thì ảnh sáng hơn nhưng nhiễu hơn. Giá trị vượt giới hạn camera sẽ bị kẹp (camera hiện tại: gain 10–640). Băng chạy theo trục x nên dải x hẹp làm QR ở trong khung ít frame hơn.
+
+**Lưu cấu hình**
+
+`solution/config/app_settings.json` (không đưa lên git, tự lưu khi đổi giá trị): serial camera và toàn bộ thông số tab Băng chuyền. File hỏng hoặc giá trị sai → dùng mặc định cho phần đó và ghi cảnh báo vào log. Bản demo không nạp Param A–D của camera và không quay video; các việc đó vẫn làm ở app test camera.
+
+**Kiểm chứng trên camera thật trước khi demo:** đọc QR khi băng chạy; Bắt đầu/Dừng nhiều lần; rút cáp khi đang chạy; đối chiếu tỉ lệ đọc với log `pass_finished`; chạy liên tục 30 phút; F11 trên màn hình trình chiếu. Test offline không xác nhận được các mục này.
+
 ### Dung lượng và giới hạn quay video
 
 - Dùng `CameraInitRecord(format=0)` / `CameraPushFrame` / `CameraStopRecord` từ SDK hiện có, không cần encoder package mới. Ghi trực tiếp trong capture thread, không dùng ảnh preview có thể bỏ frame.
@@ -152,7 +182,9 @@ solution/
 │   ├── decoder.py
 │   ├── improved_pipeline.py
 │   └── models/wechat/      # detect.onnx + sr.onnx (WeChat QR, ~1 MB, cho OpenCV 5)
-├── ui/                     # PyQt5, bind UI ↔ CameraManager
+├── ui/                     # PyQt5, app test camera: bind UI ↔ CameraManager
+├── main_demo.py            # entry phiên bản demo cho khách hàng
+├── demo_ui/                # PyQt5, phiên bản demo (dùng lại form và DecodeWorker của ui/)
 └── tests/                  # test offline
 ```
 
