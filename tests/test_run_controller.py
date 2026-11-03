@@ -1,6 +1,6 @@
 """RunController — máy trạng thái Bắt đầu/Dừng với CameraManager giả, không cần camera.
 
-Chạy (từ solution/):  python -m unittest tests.test_run_controller
+Chạy (từ gốc repo):  python -m unittest tests.test_run_controller
 """
 import os
 from pathlib import Path

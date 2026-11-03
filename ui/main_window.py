@@ -1,4 +1,4 @@
-"""MainWindow của solution — port từ Demo/python/Advanced/MainWindow.py.
+"""MainWindow của app test camera — port từ mẫu SDK MindVision Python/Advanced.
 
 Khác demo gốc:
 - Logic SDK chuyển vào CameraManager (camera/camera_manager.py), UI chỉ bind signal.

@@ -1,4 +1,4 @@
-"""Gói QR của solution — copy từ production/ (bỏ super_resolution) + ImprovePipeline.
+"""Gói QR: detector, các bước decode, ImprovePipeline và PassReader.
 
 Lưu ý: nạp DLL pyzbar cho Windows TRƯỚC khi import .decoder.
 """

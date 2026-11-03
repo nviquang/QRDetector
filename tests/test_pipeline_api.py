@@ -1,7 +1,7 @@
 """API pipeline: inject detector, decode_detection trả Decoded (text + 4 góc), quad hiển thị.
 Không cần YOLO.
 
-Chạy (từ solution/):  python -m unittest tests.test_pipeline_api
+Chạy (từ gốc repo):  python -m unittest tests.test_pipeline_api
 """
 from pathlib import Path
 import sys

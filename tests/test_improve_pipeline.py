@@ -7,8 +7,7 @@ Mặc định: ảnh adown.jpg ở thư mục gốc repo.
 import os
 import sys
 
-_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # solution/
-_REPO = os.path.dirname(_ROOT)                                        # QRDetector/
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # gốc repo
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
@@ -19,7 +18,7 @@ def main() -> int:
     # Import model dependencies only for this standalone test. This keeps
     # unittest discovery camera-only and avoids loading torch after Qt.
     from qr import ImprovePipeline
-    image_path = sys.argv[1] if len(sys.argv) > 1 else os.path.join(_REPO, "adown.jpg")
+    image_path = sys.argv[1] if len(sys.argv) > 1 else os.path.join(_ROOT, "adown.jpg")
     image = cv2.imread(image_path)
     if image is None:
         print(f"FAIL: không đọc được ảnh: {image_path}")

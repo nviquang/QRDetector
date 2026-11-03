@@ -1,6 +1,6 @@
 """PassReader — detect, ghép lượt, bỏ cascade QR đã đọc chắc, overlay. Pipeline giả, không cần YOLO.
 
-Chạy (từ solution/):  python -m unittest tests.test_pass_reader
+Chạy (từ gốc repo):  python -m unittest tests.test_pass_reader
 """
 from pathlib import Path
 import sys

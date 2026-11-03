@@ -1,6 +1,6 @@
 """Panel băng chuyền và nhãn decode trong bản demo, với fake SDK; không cần camera.
 
-Chạy (từ solution/):  python -m unittest tests.test_demo_conveyor
+Chạy (từ gốc repo):  python -m unittest tests.test_demo_conveyor
 """
 import importlib
 import json

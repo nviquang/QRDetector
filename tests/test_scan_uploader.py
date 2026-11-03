@@ -1,6 +1,6 @@
 """ScanUploader — hàng đợi gửi QR lên API, không cần Qt/mạng.
 
-Chạy (từ solution/):  python -m unittest tests.test_scan_uploader
+Chạy (từ gốc repo):  python -m unittest tests.test_scan_uploader
 """
 from pathlib import Path
 import sys

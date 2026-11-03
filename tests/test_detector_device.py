@@ -1,6 +1,6 @@
 """Chọn thiết bị cho detector + kiểm tra GPU thật (bỏ qua nếu máy không có CUDA).
 
-Chạy (từ solution/):  python -m unittest tests.test_detector_device
+Chạy (từ gốc repo):  python -m unittest tests.test_detector_device
 """
 import glob
 import os

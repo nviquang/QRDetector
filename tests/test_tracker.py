@@ -1,6 +1,6 @@
 """PassTracker — gom detection qua các frame thành lượt QR. Không cần model/camera.
 
-Chạy (từ solution/):  python -m unittest tests.test_tracker
+Chạy (từ gốc repo):  python -m unittest tests.test_tracker
 """
 from pathlib import Path
 import sys
@@ -52,7 +52,7 @@ class PassTrackerTests(unittest.TestCase):
         self.assertEqual(track.text, "A")
         self.assertTrue(track.conflicting)
 
-    # ── mới trong solution ──
+    # ── match() ──
 
     def test_match_does_not_mutate_tracks(self):
         tracker = PassTracker()

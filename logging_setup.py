@@ -1,4 +1,4 @@
-"""Bounded console and rotating-file logging for the solution application."""
+"""Bounded console and rotating-file logging for the application."""
 from __future__ import annotations
 
 import logging

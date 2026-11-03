@@ -1,6 +1,6 @@
 """SessionStats — số liệu màn hình làm việc, không cần Qt/camera.
 
-Chạy (từ solution/):  python -m unittest tests.test_session_stats
+Chạy (từ gốc repo):  python -m unittest tests.test_session_stats
 """
 from pathlib import Path
 import sys

@@ -1,6 +1,6 @@
 """Chế độ băng chuyền: công thức exposure + CameraManager/UI với fake SDK; không cần camera.
 
-Chạy (từ solution/):  python -m unittest tests.test_conveyor_mode
+Chạy (từ gốc repo):  python -m unittest tests.test_conveyor_mode
 """
 from pathlib import Path
 import sys

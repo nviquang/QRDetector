@@ -1,6 +1,6 @@
 """Gom detection qua các frame thành "lượt" — mỗi lượt là một QR đi qua khung hình một lần.
 
-Copy từ offline/qr/tracker.py (không import chéo giữa hai app), thêm ``match()`` để hỏi trước
+Có ``match()`` để hỏi trước
 detection sẽ ghép vào track nào mà không đổi trạng thái — PassReader dùng để bỏ cascade cho QR
 đã đọc chắc. Ghép tham lam theo khoảng cách từ vị trí dự đoán (tâm + vận tốc × số frame) tới
 tâm detection mới. Lượt kết thúc khi mất dấu quá ``max_gap`` frame. Kết quả đọc của lượt là nội

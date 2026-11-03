@@ -1,6 +1,6 @@
 """Màn hình làm việc + cửa sổ Cấu hình trong MainWindow, với CameraManager giả; không cần camera.
 
-Chạy (từ solution/):  python -m unittest tests.test_workspace_ui
+Chạy (từ gốc repo):  python -m unittest tests.test_workspace_ui
 """
 import importlib.util
 import json

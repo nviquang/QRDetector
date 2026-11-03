@@ -16,7 +16,7 @@ import re
 import sys
 import time
 
-_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # solution/
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # gốc repo
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 

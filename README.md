@@ -1,4 +1,4 @@
-# solution/ — Ứng dụng quét QR bằng camera MindVision
+# QRDetector — Ứng dụng quét QR bằng camera MindVision
 
 Ứng dụng PyQt5 tích hợp **camera MindVision (MVSDK / `mvsdk`)** và **pipeline QR** (qrdet detect ở imgsz 1280 → chuỗi decode trên vùng QR cắt từ ảnh gốc: zxing → WeChat → WeChat CNN + super-resolution). Tối ưu cho QR nhỏ (~60px) trên frame 2448×2048; khoảng 1s/frame trên CPU. Không dùng Real-ESRGAN.
 
@@ -16,9 +16,9 @@ Camera (MindVision Camera* API) → frame BGR độc lập → mỗi N frame →
 | Python | 3.11 (64-bit) |
 | SDK camera | MindVision MVSDK/driver tương thích camera |
 | Runtime DLL | `MVCAMSDK_X64.dll` với Python 64-bit (`MVCAMSDK.dll` với Python 32-bit) |
-| Camera | Camera đã hoạt động với `Demo/Python/Basic` |
+| Camera | Camera đã hoạt động với công cụ của SDK MindVision |
 
-`solution/mvsdk.py` là wrapper Python được đóng gói cùng ứng dụng; máy chạy vẫn cần driver và runtime DLL MindVision. Bảo đảm DLL tương ứng kiến trúc Python nằm trong thư mục mà Windows có thể tìm thấy (thường do bộ cài SDK thêm vào `PATH`).
+`mvsdk.py` là wrapper Python được đóng gói cùng ứng dụng; máy chạy vẫn cần driver và runtime DLL MindVision. Bảo đảm DLL tương ứng kiến trúc Python nằm trong thư mục mà Windows có thể tìm thấy (thường do bộ cài SDK thêm vào `PATH`).
 
 Kiểm tra nhanh trong PowerShell:
 
@@ -38,7 +38,7 @@ Nếu lệnh đầu không thấy DLL, cài lại MindVision SDK/driver hoặc t
 python -m venv .venv
 .venv\Scripts\activate
 python -m pip install --upgrade pip
-pip install PyQt5 numpy opencv-contrib-python pillow pyzbar zxing-cpp qrdet torch torchvision ultralytics
+pip install -r requirements.txt
 ```
 
 > `opencv-contrib-python` cung cấp `WeChatQRCode` và `QRCodeDetector`.
@@ -49,20 +49,18 @@ pip install PyQt5 numpy opencv-contrib-python pillow pyzbar zxing-cpp qrdet torc
 ### GPU NVIDIA (khuyến nghị)
 
 Detect QR (YOLO) chạy trên GPU NVIDIA nếu torch có CUDA; không có CUDA thì tự chạy CPU (chậm hơn nhiều).
-Máy lab: GTX 1650 4 GB, driver ≥ 560. Thay torch bản CPU bằng bản CUDA 12.6 (~2,6 GB):
+Máy lab: GTX 1650 4 GB, driver ≥ 560. `requirements.txt` cài bản CUDA 12.6 (~2,6 GB). Kiểm tra:
 
 ```bash
-.venv\Scripts\python.exe -m pip install "torch==2.14.1+cu126" "torchvision==0.29.1+cu126" --index-url https://download.pytorch.org/whl/cu126
 .venv\Scripts\python.exe -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
 ```
 
-Quay lại bản CPU: cùng lệnh với `+cpu` và `--index-url https://download.pytorch.org/whl/cpu`.
+Máy không có GPU: `pip install "torch==2.14.1+cpu" "torchvision==0.29.1+cpu" --index-url https://download.pytorch.org/whl/cpu`.
 Thiết bị đang dùng hiện trên nhãn "Decode" (GPU/CPU) và trong log (`qr_detector device=…`).
 
 ### Chạy
 
 ```bash
-cd solution
 python main.py
 ```
 
@@ -79,7 +77,7 @@ python main.py
    - Hiển thị QR mới nhất, số lần lặp và lịch sử 50 lần gần nhất.
 5. **Snap** — lưu frame hiện tại ra `./output.jpg|bmp|png`.
 6. Panel **Quay dữ liệu — AVI không nén**, dưới preview:
-   - Mở camera, đợi frame đầu tiên; chọn **Thư mục lưu** (mặc định `solution/recordings/`).
+   - Mở camera, đợi frame đầu tiên; chọn **Thư mục lưu** (mặc định `recordings/`).
    - Chọn **FPS video** cao hơn FPS acquisition/trigger tối đa; gợi ý ít nhất `ceil(1.25 × FPS tối đa)`. Giá trị ban đầu 60 không bảo đảm phù hợp mọi camera. Đây là FPS đầu ra SDK, **không thay đổi FPS camera** và không lấy theo FPS preview.
    - **Bắt đầu quay** / **Dừng quay**. Start chờ frame xử lý hợp lệ tiếp theo để dùng đúng ROI hiện tại; ở chế độ software-trigger có thể cần bấm **Soft trigger** khi trạng thái là STARTING. Stop vẫn hủy được yêu cầu trong lúc chưa có frame. Mỗi phiên khởi tạo thành công ghi một file `video.avi` trong thư mục timestamp + UUID riêng, không tự chia đoạn và không ghi đè phiên trước.
    - Ảnh sau ISP camera ở **độ phân giải ROI hiện tại**, không resize, không overlay QR/âm thanh và không phải RAW cảm biến. Exposure/gain/ISP trước khi quay vẫn ảnh hưởng ảnh.
@@ -91,7 +89,6 @@ python main.py
 Bản riêng, chạy song song với app test camera ở trên; hai bản dùng chung camera nên không mở cùng lúc.
 
 ```bash
-cd solution
 python main_demo.py
 ```
 
@@ -112,7 +109,7 @@ python main_demo.py
 
 **Lưu cấu hình**
 
-`solution/config/app_settings.json` (không đưa lên git, tự lưu khi đổi giá trị): serial camera và toàn bộ thông số tab Băng chuyền. File hỏng hoặc giá trị sai → dùng mặc định cho phần đó và ghi cảnh báo vào log. Bản demo không nạp Param A–D của camera và không quay video; các việc đó vẫn làm ở app test camera.
+`config/app_settings.json` (không đưa lên git, tự lưu khi đổi giá trị): serial camera và toàn bộ thông số tab Băng chuyền. File hỏng hoặc giá trị sai → dùng mặc định cho phần đó và ghi cảnh báo vào log. Bản demo không nạp Param A–D của camera và không quay video; các việc đó vẫn làm ở app test camera.
 
 **Kiểm chứng trên camera thật trước khi demo:** đọc QR khi băng chạy; Bắt đầu/Dừng nhiều lần; rút cáp khi đang chạy; đối chiếu tỉ lệ đọc với log `pass_finished`; chạy liên tục 30 phút; F11 trên màn hình trình chiếu. Test offline không xác nhận được các mục này.
 
@@ -139,7 +136,7 @@ python main_demo.py
 Công cụ offline (chạy từ gốc repo, chỉ khi cần đối chiếu):
 
 ```powershell
-.\.venv\Scripts\python.exe solution/tests/compare_recording_color.py "D:/QRData/session/video.avi" "D:/QRData/session/color_diagnostics/sample_0001" --frame 0 --view
+.\.venv\Scripts\python.exe tools/compare_recording_color.py "D:/QRData/session/video.avi" "D:/QRData/session/color_diagnostics/sample_0001" --frame 0 --view
 ```
 
 `--frame` là chỉ số AVI bắt đầu từ 0, **không** suy ra từ push ordinal/FPS. Chỉ thêm `--matched` sau khi đã xác nhận cùng frame bằng nội dung/counter; nếu chưa xác nhận công cụ chỉ báo số đo, không kết luận lỗi màu. `--view` hiển thị hai ảnh bằng cùng đường QImage RGB888. Công cụ không sửa video, không tự tìm/đổi frame và không bù màu.
@@ -149,16 +146,20 @@ Nếu frame đã ghép đúng trùng pixel nguồn nhưng VLC khác màu, cần 
 ### Test offline (không cần camera)
 
 ```bash
-python -m unittest discover -s solution/tests -p "test_*.py"
-cd solution
-python tests/test_improve_pipeline.py            # ảnh mặc định ../adown.jpg
+python -m unittest discover -s tests -t . -p "test_*.py"   # torch được nạp trước PyQt5 trong tests/__init__.py
 python tests/test_improve_pipeline.py path\to\qr.jpg
-python tests/test_small_qr.py                    # QR nhỏ: QR tổng hợp + frame mẫu ../images/*.bmp (≥12/14)
+python tests/test_small_qr.py                              # QR nhỏ: QR tổng hợp + frame mẫu (≥12/14)
 ```
+
+Ảnh mẫu đọc từ biến môi trường `QR_SAMPLES_DIR`, mặc định `../QRDetector-research/data/images`. Thiếu ảnh thì các test liên quan được bỏ qua.
+
+Công cụ trong `tools/` (chạy từ gốc repo, xem cách dùng ở đầu mỗi file): `bench_decode.py`, `eval_videos.py`, `sim_qr.py`, `conveyor_calc.py`, `compare_recording_color.py`, `conveyor_camera_3d.html`.
+
+Code và dữ liệu thử nghiệm cũ nằm ở repo `../QRDetector-research`; lịch sử git của chúng ở tag `archive/research-2026-11`.
 
 ### Log chẩn đoán camera
 
-Ứng dụng ghi console và `solution/logs/camera.log` (UTF-8), xoay vòng ở 2 MB và giữ tối đa 3 bản cũ. Log không chứa ảnh hay nội dung QR.
+Ứng dụng ghi console và `logs/camera.log` (UTF-8), xoay vòng ở 2 MB và giữ tối đa 3 bản cũ. Log không chứa ảnh hay nội dung QR.
 
 Các bản ghi chính gồm thao tác SDK và mã trả về dạng hex, snapshot exposure/gain/AE/gamma khi mở camera, lỗi capture được giới hạn tần suất, và thống kê frame mỗi 5 giây (`mean`, `min`, `max`, `near_black_pct`).
 
@@ -170,22 +171,22 @@ Các bản ghi chính gồm thao tác SDK và mã trả về dạng hex, snapsho
 ## 4. Cấu trúc
 
 ```
-solution/
-├── main.py                 # entry
-├── mvsdk.py                # wrapper Python MindVision được vendor từ Demo Basic
-├── camera/
-│   └── camera_manager.py   # lifecycle SDK, tham số và capture thread → BGR frame
-├── qr/                     # pipeline QR (không sửa production/)
-│   ├── detector.py
-│   ├── corrector.py
-│   ├── preprocessor.py
-│   ├── decoder.py
-│   ├── improved_pipeline.py
+QRDetector/
+├── main.py                 # entry app test camera
+├── main_demo.py            # entry phiên bản demo cho khách hàng
+├── logging_setup.py
+├── mvsdk.py                # wrapper Python MindVision được vendor từ mẫu SDK Python/Basic
+├── requirements.txt
+├── camera/                 # lifecycle SDK, tham số, capture thread, quay video, công thức băng chuyền
+├── qr/                     # pipeline QR
+│   ├── detector.py, corrector.py, preprocessor.py, decoder.py
+│   ├── improved_pipeline.py, tracker.py, pass_reader.py
 │   └── models/wechat/      # detect.onnx + sr.onnx (WeChat QR, ~1 MB, cho OpenCV 5)
 ├── ui/                     # PyQt5, app test camera: bind UI ↔ CameraManager
-├── main_demo.py            # entry phiên bản demo cho khách hàng
 ├── demo_ui/                # PyQt5, phiên bản demo (dùng lại form và DecodeWorker của ui/)
-└── tests/                  # test offline
+├── tests/                  # test offline, không cần camera
+├── tools/                  # đo tốc độ, đánh giá video, mô phỏng, đối chiếu màu, tính băng chuyền
+└── docs/                   # plan, spec, đề xuất khắc phục
 ```
 
 Lifecycle camera:
@@ -204,7 +205,6 @@ Mỗi frame được xử lý theo kích thước thật trong `FrameHead`, chuy
 ## 5. Ghi chú kỹ thuật
 
 - **Import order:** `torch` phải được import trước PyQt5 để tránh `WinError 1114` (`c10.dll`).
-- **Không sửa** `production/` và `Demo/`; mọi thay đổi thuộc `solution/`.
 - Frame đầu vào QR luôn là **BGR** `np.ndarray`.
 - Decode chạy trên thread riêng; nếu pipeline bận thì frame mới bị bỏ qua thay vì xếp hàng.
 - Nếu không thấy camera, mở công cụ cấu hình/Viewer của MindVision để xác nhận driver, kết nối và cấu hình mạng của camera GigE.

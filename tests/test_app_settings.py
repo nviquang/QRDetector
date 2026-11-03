@@ -1,6 +1,6 @@
 """AppSettings — đọc/ghi JSON cấu hình, không cần Qt/camera.
 
-Chạy (từ solution/):  python -m unittest tests.test_app_settings
+Chạy (từ gốc repo):  python -m unittest tests.test_app_settings
 """
 import json
 from pathlib import Path

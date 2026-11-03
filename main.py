@@ -1,4 +1,4 @@
-"""Entry point của solution: python main.py"""
+"""Entry point của app test camera: python main.py"""
 
 import logging
 import sys

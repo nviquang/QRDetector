@@ -1,6 +1,6 @@
 """Vẽ quad lên frame hiển thị: bù vận tốc, bỏ quad cũ/khác kích thước; chuyển frame → QImage.
 
-Chạy (từ solution/):  python -m unittest tests.test_display
+Chạy (từ gốc repo):  python -m unittest tests.test_display
 """
 from pathlib import Path
 import sys

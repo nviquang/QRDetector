@@ -1,30 +1,30 @@
-# CLAUDE.md — solution/
+# CLAUDE.md
 
 Sản phẩm cuối: ứng dụng PyQt5 tích hợp **camera MindVision (MVSDK `Camera*`)** + **QR pipeline**.
 
-Hướng dẫn cài đặt và sử dụng: xem `solution/README.md`.
+Hướng dẫn cài đặt và sử dụng: xem `README.md`. Code và dữ liệu thử nghiệm cũ ở repo `../QRDetector-research` (lịch sử git ở tag `archive/research-2026-11`), không dùng trong sản phẩm.
 
 ## Chạy
 
 ```bash
 .venv\Scripts\activate
-cd solution
+pip install -r requirements.txt
 python main.py
 ```
 
 Cần driver/runtime MindVision tương ứng kiến trúc Python (`MVCAMSDK_X64.dll` cho 64-bit). Test pipeline offline không cần camera:
-`python tests/test_improve_pipeline.py` và `python tests/test_small_qr.py`, và `python tests/bench_decode.py [--device cpu] [--band Y H] [--half] [--video …]` để đo tốc độ
+`python -m unittest discover -s tests -t . -p "test_*.py"` (cả bộ test, phải có `-t .` để `tests/__init__.py` nạp torch trước PyQt5), `python tests/test_improve_pipeline.py <ảnh>`, `python tests/test_small_qr.py`, và `python tools/bench_decode.py [--device cpu] [--band Y H] [--half] [--video …]` để đo tốc độ
 
 ## Kiến trúc
 
 ```
 main.py                  → entry, khởi tạo MainWindow
-mvsdk.py                 → wrapper Python MindVision, vendor từ Demo/Python/Basic
+mvsdk.py                 → wrapper Python MindVision, vendor từ mẫu SDK Python/Basic
 camera/camera_manager.py → lifecycle, tham số, capture thread → latest_frame BGR
-qr/                      → copy từ production/ (KHÔNG sửa production/ gốc)
+qr/                      → pipeline QR
   detector/corrector/preprocessor/decoder.py
   improved_pipeline.py   → ImprovePipeline
-  tracker.py             → PassTracker: gom detection qua frame thành lượt (copy từ offline/, thêm match())
+  tracker.py             → PassTracker: gom detection qua frame thành lượt
   pass_reader.py         → PassReader: detect → ghép lượt → bỏ cascade QR đã đọc chắc (≥2 phiếu, kiểm tra lại mỗi 5 lần) → ms + Overlay
 ui/main_window.py        → bind UI ↔ CameraManager, panel quay/đóng bất đồng bộ
 camera/recording.py      → AVI không nén MVSDK, một file/phiên, trạng thái và disk guard
@@ -43,7 +43,7 @@ Camera dùng MindVision `mvsdk`: `CameraSdkInit → CameraEnumerateDevice → Ca
 
 **Quay video:** `start_recording(RecordingOptions)` / `stop_recording()` chỉ gửi yêu cầu; đọc `recording_status()` để biết kết quả. Capture thread sở hữu InitRecord/PushFrame/StopRecord, dùng RGB8/MONO8 + header sau ISP trước BGR/overlay, không lấy từ latest_frame. Snapshot không giữ SDK lock. Giữ `native_open` độc lập với ERROR: chưa finalize thì không UnInit/free/reopen. Mỗi phiên khởi tạo thành công ghi một `video.avi` trong thư mục timestamp + UUID riêng, không tự chia file/dừng theo dung lượng video; giữ b2GLimit=False (SDK chưa triển khai tự chia). Khả năng AVI >4 GiB phụ thuộc DLL, phải kiểm chứng camera thật; vẫn giữ disk guard và dừng khi có lỗi. Đường dẫn phải encode GBK. Camera configuration bị khóa khi ghi. Test mock không chứng minh không mất frame hoặc AVI thật đúng thời lượng.
 
-**ImprovePipeline** (không dùng SR/Real-ESRGAN, tối ưu cho QR nhỏ ~60px trên frame 2448×2048): detect qrdet với `imgsz=1280` (640 mặc định bỏ sót QR nhỏ) → cascade trên ROI cắt từ ảnh gốc, rẻ trước đắt sau: ROI×4 → zxing; warp 256 + Quiet Zone → zxing; CLAHE×4 → WeChat; stretch×4 → WeChat CNN+SR; ROI×3 → WeChat CNN+SR. Model WeChat ONNX (OpenCV 5 không load caffemodel) ở `qr/models/wechat/`; thiếu model thì bỏ qua bước CNN. Không dùng pyzbar/`decode_parallel` trong pipeline (yếu với QR ~2px/module, chậm). Test: `python tests/test_small_qr.py` (dùng frame mẫu `../images/*.bmp`, kỳ vọng ≥12/14).
+**ImprovePipeline** (không dùng SR/Real-ESRGAN, tối ưu cho QR nhỏ ~60px trên frame 2448×2048): detect qrdet với `imgsz=1280` (640 mặc định bỏ sót QR nhỏ) → cascade trên ROI cắt từ ảnh gốc, rẻ trước đắt sau: ROI×4 → zxing; warp 256 + Quiet Zone → zxing; CLAHE×4 → WeChat; stretch×4 → WeChat CNN+SR; ROI×3 → WeChat CNN+SR. Model WeChat ONNX (OpenCV 5 không load caffemodel) ở `qr/models/wechat/`; thiếu model thì bỏ qua bước CNN. Không dùng pyzbar/`decode_parallel` trong pipeline (yếu với QR ~2px/module, chậm). Test: `python tests/test_small_qr.py` (dùng frame mẫu trong `QR_SAMPLES_DIR`, mặc định `../QRDetector-research/data/images`, kỳ vọng ≥12/14).
 
 ## Phiên bản demo (`python main_demo.py`, gói `demo_ui/`)
 
@@ -66,9 +66,8 @@ demo_ui/scan_uploader.py   → ScanUploader: hàng đợi + thread nền gửi `
 
 ## Ràng buộc
 
-- Không thêm `basicsr`/`realesrgan` vào `solution/`.
-- Không sửa `production/` và `Demo/`; mọi thay đổi chỉ nằm trong `solution/`.
+- Không thêm `basicsr`/`realesrgan`.
 - Đầu vào QR luôn là BGR `np.ndarray` contiguous (OpenCV).
 - `CameraManager` là boundary tương thích của UI; giữ API public khi thay đổi backend.
 - `torch`/`qr` phải được import trước PyQt5 để tránh `WinError 1114` trên Windows.
-- Wrapper `solution/mvsdk.py` được vendor trong solution; không import động từ `Demo/`.
+- `mvsdk.py` được vendor trong repo; không import động từ thư mục SDK.

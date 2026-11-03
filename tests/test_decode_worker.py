@@ -1,6 +1,6 @@
 """DecodeWorker dùng PassReader: signal kết quả/thời gian/lượt, warm-up, flush khi dừng.
 
-Chạy (từ solution/):  python -m unittest tests.test_decode_worker
+Chạy (từ gốc repo):  python -m unittest tests.test_decode_worker
 """
 import importlib.util
 import os
@@ -16,7 +16,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-# qr (torch) PHẢI import trước PyQt5 — xem solution/CLAUDE.md
+# qr (torch) PHẢI import trước PyQt5 — xem CLAUDE.md
 from qr.improved_pipeline import Decoded  # noqa: E402
 from qr.pass_reader import PassReader  # noqa: E402
 from tests.qr_fixtures import detection_at  # noqa: E402
