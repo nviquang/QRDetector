@@ -10,15 +10,19 @@ Camera (MindVision Camera* API) → frame BGR độc lập → mỗi N frame →
 
 ## 1. Yêu cầu
 
-| Thành phần | Phiên bản |
-| --- | --- |
-| Windows | 10/11 64-bit |
-| Python | 3.11 (64-bit) |
-| SDK camera | MindVision MVSDK/driver tương thích camera |
+| Thành phần  | Phiên bản                                                               |
+| ----------- | ----------------------------------------------------------------------- |
+| Windows     | 10/11 64-bit                                                            |
+| Python      | 3.11 (64-bit)                                                           |
+| SDK camera  | ChinaVision Camera Platform 2.1.10.196 (bộ cài `ChinaVision Camera Platform Setup(2.1.10.196_20260721)(WIN10)`) |
 | Runtime DLL | `MVCAMSDK_X64.dll` với Python 64-bit (`MVCAMSDK.dll` với Python 32-bit) |
-| Camera | Camera đã hoạt động với công cụ của SDK MindVision |
+| Camera      | Camera đã hoạt động với app ChinaVision đi kèm bộ cài                   |
 
-`mvsdk.py` là wrapper Python được đóng gói cùng ứng dụng; máy chạy vẫn cần driver và runtime DLL MindVision. Bảo đảm DLL tương ứng kiến trúc Python nằm trong thư mục mà Windows có thể tìm thấy (thường do bộ cài SDK thêm vào `PATH`).
+Tài liệu này gọi SDK là "MindVision" theo API `mvsdk` / `Camera*`, nhưng bản đang dùng được cài từ bộ cài ChinaVision vào `C:\Program Files (x86)\ChinaVision`. DLL có trong `C:\Windows\System32` (64-bit) và `C:\Windows\SysWOW64` (32-bit), trùng với bản trong thư mục `SDK\` của ChinaVision, nên gỡ ChinaVision có thể làm app không mở được camera.
+
+**Không nhầm với MVS của Hikrobot:** MVS là SDK của hãng khác (`MvCameraControl`), không cung cấp `MVCAMSDK_X64.dll` và app này không dùng.
+
+`mvsdk.py` là wrapper Python được đóng gói cùng ứng dụng, giống hệt `Demo\Python\Basic\mvsdk.py` của ChinaVision; máy chạy vẫn cần driver và runtime DLL. Bảo đảm DLL tương ứng kiến trúc Python nằm trong thư mục mà Windows có thể tìm thấy.
 
 Kiểm tra nhanh trong PowerShell:
 
@@ -27,7 +31,7 @@ where.exe MVCAMSDK_X64.dll
 python -c "import struct; print(struct.calcsize('P') * 8)"
 ```
 
-Nếu lệnh đầu không thấy DLL, cài lại MindVision SDK/driver hoặc thêm thư mục chứa DLL vào `PATH` trước khi chạy.
+Nếu lệnh đầu không thấy DLL, cài lại bộ cài ChinaVision hoặc thêm `C:\Program Files (x86)\ChinaVision\SDK\X64` vào `PATH` trước khi chạy.
 
 ---
 
