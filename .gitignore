@@ -8,7 +8,6 @@ __pycache__/
 # ── Dữ liệu & media (không push lên repo) ───────────────────────────────────
 data/
 data_real/
-docs/
 video/
 frames_output/
 output_qrs/
