@@ -1,11 +1,11 @@
 """Đo tốc độ đọc QR theo từng bước (detect / cascade) và đếm lượt — ảnh mẫu hoặc video quay từ app.
 
-Chạy (từ solution/):
-  python tests/bench_decode.py                              # ../images/*.bmp, GPU nếu có
-  python tests/bench_decode.py --device cpu                 # so sánh với CPU
-  python tests/bench_decode.py --band 1024 768              # cắt dải như chế độ băng chuyền
-  python tests/bench_decode.py --half                       # thử FP16 (chỉ GPU)
-  python tests/bench_decode.py --video recordings/<phiên>/video.avi --every 5
+Chạy (từ gốc repo). Ảnh mẫu lấy từ QR_SAMPLES_DIR, mặc định ../QRDetector-research/data/images:
+  python tools/bench_decode.py                              # ảnh mẫu *.bmp, GPU nếu có
+  python tools/bench_decode.py --device cpu                 # so sánh với CPU
+  python tools/bench_decode.py --band 1024 768              # cắt dải như chế độ băng chuyền
+  python tools/bench_decode.py --half                       # thử FP16 (chỉ GPU)
+  python tools/bench_decode.py --video recordings/<phiên>/video.avi --every 5
 Warm-up model chạy trước, không tính vào thống kê.
 """
 
@@ -19,6 +19,7 @@ import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
+SAMPLES_DIR = os.environ.get("QR_SAMPLES_DIR", os.path.join(ROOT, "..", "QRDetector-research", "data", "images"))
 
 import cv2  # noqa: E402
 import numpy as np  # noqa: E402
@@ -40,7 +41,7 @@ def _frames(args):
             idx += 1
         cap.release()
     else:
-        for i, path in enumerate(sorted(glob.glob(os.path.join(ROOT, "..", "images", "*.bmp")))):
+        for i, path in enumerate(sorted(glob.glob(os.path.join(SAMPLES_DIR, "*.bmp")))):
             yield i * 1000, cv2.imread(path)     # cách nhau > max_gap → mỗi ảnh là lượt riêng
 
 
@@ -78,7 +79,7 @@ def main():
             break
     passes += reader.flush()
     if not rows:
-        sys.exit("Không có frame nào (kiểm tra --video hoặc thư mục ../images).")
+        sys.exit("Không có frame nào (kiểm tra --video hoặc biến QR_SAMPLES_DIR).")
 
     print(f"device={pipeline.device} half={args.half} imgsz={args.imgsz} band={args.band}")
     for name, col in (("detect", 0), ("cascade", 1), ("tổng", 2)):

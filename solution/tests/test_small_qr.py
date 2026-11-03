@@ -1,7 +1,7 @@
 """Test offline ImprovePipeline cho QR nhỏ trên frame lớn — không cần camera.
 
 Chạy:  python tests/test_small_qr.py [thư_mục_frame_mẫu]
-Mặc định thư mục frame mẫu: ../images (frame camera 2448×2048, QR ~60px). Thiếu thư mục thì bỏ qua phần đó.
+Mặc định thư mục frame mẫu: QR_SAMPLES_DIR, không có thì ../QRDetector-research/data/images (frame camera 2448×2048, QR ~60px). Thiếu thư mục thì bỏ qua phần đó.
 
 Kiểm tra:
   1. Model WeChat CNN (ONNX) load được.
@@ -17,7 +17,6 @@ import sys
 import time
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # solution/
-_REPO = os.path.dirname(_ROOT)                                        # QRDetector/
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
@@ -71,7 +70,7 @@ def main() -> int:
     text = hit.text if hit else None
     results.append(check("Cascade decode trên Detection dựng tay", text == SYNTH_TEXT, f"kết quả={text}"))
 
-    sample_dir = sys.argv[1] if len(sys.argv) > 1 else os.path.join(_REPO, "images")
+    sample_dir = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("QR_SAMPLES_DIR", os.path.join(_ROOT, "..", "QRDetector-research", "data", "images"))
     paths = sorted(glob.glob(os.path.join(sample_dir, "*.bmp")) + glob.glob(os.path.join(sample_dir, "*.png")))
     if not paths:
         print(f"[SKIP] Không có frame mẫu trong {sample_dir}")

@@ -1,0 +1,11 @@
+# Bản torch GPU (CUDA 12.6): giữ dòng index dưới. Máy chỉ có CPU: xem README mục Python environment.
+--extra-index-url https://download.pytorch.org/whl/cu126
+
+PyQt5==5.15.11
+numpy==2.4.6
+opencv-contrib-python==5.0.0.93
+pyzbar==0.1.9
+zxing-cpp==3.1.0
+qrdet==2.5
+torch==2.14.1+cu126
+torchvision==0.29.1+cu126

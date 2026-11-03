@@ -3,6 +3,7 @@
 Chạy (từ solution/):  python -m unittest tests.test_detector_device
 """
 import glob
+import os
 from pathlib import Path
 import sys
 import unittest
@@ -18,7 +19,8 @@ import torch  # noqa: E402
 from qr.detector import Detection, QRDetector, resolve_device  # noqa: E402
 from qr.improved_pipeline import ImprovePipeline  # noqa: E402
 
-SAMPLES = sorted(glob.glob(str(ROOT.parent / "images" / "*.bmp")))[:3]
+SAMPLES_DIR = os.environ.get("QR_SAMPLES_DIR", ROOT.parent / "QRDetector-research" / "data" / "images")
+SAMPLES = sorted(glob.glob(os.path.join(SAMPLES_DIR, "*.bmp")))[:3]
 
 
 class ResolveDeviceTests(unittest.TestCase):
@@ -76,7 +78,7 @@ class SetDeviceTests(unittest.TestCase):
         self.assertTrue(pipeline.gpu_available)
 
 
-@unittest.skipUnless(SAMPLES, "thiếu ảnh mẫu ../images/*.bmp")
+@unittest.skipUnless(SAMPLES, "thiếu ảnh mẫu *.bmp trong QR_SAMPLES_DIR")
 class RealDetectorTests(unittest.TestCase):
     def test_detections_carry_mask_polygon(self):
         det = QRDetector(conf_th=0.3, imgsz=1280, device="cpu").detect(cv2.imread(SAMPLES[0]))[0]

@@ -11,6 +11,8 @@ import logging
 import os
 from pathlib import Path
 
+from demo_ui.scan_uploader import DEFAULT_BASE_URL
+
 logger = logging.getLogger("solution.settings")
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -62,7 +64,7 @@ class AppSettings:
     band_x: int = 0
     band_w: int = 2448
     upload_enabled: bool = True     # gửi mã QR đọc được lên API
-    upload_base_url: str = "https://qr-scan-gp1.vercel.app/api/scans"
+    upload_base_url: str = DEFAULT_BASE_URL
 
     @classmethod
     def load(cls, path: Path) -> "AppSettings":
