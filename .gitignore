@@ -4,21 +4,16 @@
 __pycache__/
 *.pyc
 *.pyo
+.ipynb_checkpoints/
 
-# ── Dữ liệu & media (không push lên repo) ───────────────────────────────────
-data/
-data_real/
-video/
-frames_output/
-output_qrs/
-qr_crops/
-tmp/
+# ── Dữ liệu sinh ra khi chạy app ─────────────────────────────────────────────
+recordings/
+logs/
+config/
+output.*
 
-# ── Model weights (file lớn, dùng git-lfs hoặc tải thủ công) ─────────────────
-weights/
-wechat_qrcode_models/
-
-# ── Ảnh & video rời ngoài thư mục (output tạm thời) ─────────────────────────
+# ── Ảnh & video rời (dữ liệu mẫu nằm ở ../QRDetector-research/data) ──────────
+*.bmp
 *.jpg
 *.jpeg
 *.png
@@ -26,23 +21,11 @@ wechat_qrcode_models/
 *.avi
 *.mov
 
-# ── Notebook output (cell outputs, checkpoints) ───────────────────────────────
-.ipynb_checkpoints/
-
-# ── IDE & hệ điều hành ────────────────────────────────────────────────────────
+# ── IDE, hệ điều hành & công cụ cục bộ ───────────────────────────────────────
 .vscode/
 .idea/
 Thumbs.db
 desktop.ini
-
-# ── solution/: dữ liệu sinh ra khi chạy app camera ───────────────────────────
-solution/recordings/
-solution/logs/
-solution/config/
-solution/output.*
-
-# ── Công cụ cục bộ & mẫu thử ─────────────────────────────────────────────────
-*.bmp
 .playwright-mcp/
 .superpowers/
 .claude/worktrees/
