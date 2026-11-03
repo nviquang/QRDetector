@@ -39,4 +39,12 @@ desktop.ini
 # ── solution/: dữ liệu sinh ra khi chạy app camera ───────────────────────────
 solution/recordings/
 solution/logs/
+solution/config/
 solution/output.*
+
+# ── Công cụ cục bộ & mẫu thử ─────────────────────────────────────────────────
+*.bmp
+.playwright-mcp/
+.superpowers/
+.claude/worktrees/
+.claude/settings.local.json
