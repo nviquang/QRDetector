@@ -30,3 +30,4 @@ desktop.ini
 .superpowers/
 .claude/worktrees/
 .claude/settings.local.json
+experiments/out/
