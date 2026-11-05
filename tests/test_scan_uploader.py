@@ -44,6 +44,45 @@ class UploaderTests(unittest.TestCase):
         up.drain()
         self.assertEqual(sent, [BASE + "/A%2F1"])
 
+    def test_disabled_ignores_submit_and_enabling_sends_again(self):
+        sent = []
+        up = make(sent.append)
+        up.set_enabled(False)
+        self.assertFalse(up.submit("A"))
+        up.drain()
+        self.assertEqual(sent, [])
+        up.set_enabled(True)
+        self.assertTrue(up.submit("A"))
+        up.drain()
+        self.assertEqual(sent, [BASE + "/A"])
+
+    def test_disabling_drops_queue_and_forgets_dropped_codes(self):
+        sent = []
+        up = make(sent.append)
+        up.submit("A")
+        up.set_enabled(False)
+        self.assertEqual(up.pending, 0)
+        up.set_enabled(True)
+        self.assertTrue(up.submit("A"))      # không bị coi là trùng
+        up.drain()
+        self.assertEqual(sent, [BASE + "/A"])
+
+    def test_disabling_during_retry_stops_without_counting_failure(self):
+        calls, statuses = [], []
+        def send(url):
+            calls.append(url)
+            up.set_enabled(False)            # người dùng tắt giữa hai lần thử
+            raise TransientError("mất mạng")
+        up = make(send, on_status=statuses.append)
+        up.submit("A")
+        statuses.clear()
+        up.drain()
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(up.failed_count, 0)
+        self.assertFalse([s for s in statuses if s.last_ok is False])    # không báo "gửi lỗi" lên màn hình
+        up.set_enabled(True)
+        self.assertTrue(up.submit("A"))
+
     def test_duplicate_within_ttl_sent_once_then_again_after_ttl(self):
         sent, clock = [], Clock()
         up = make(sent.append, clock, dedup_ttl=30.0)

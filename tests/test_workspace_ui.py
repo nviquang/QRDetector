@@ -115,7 +115,7 @@ class WorkspaceUiTests(unittest.TestCase):
     def test_settings_have_only_connection_and_conveyor_tabs(self):
         tabs = self.window.settings_window.tabs
         self.assertEqual([tabs.tabText(i) for i in range(tabs.count())], ["Kết nối camera", "Băng chuyền"])
-        for removed in ("spin_n", "cbx_conveyor_speed", "spin_mm_per_px", "spin_max_blur", "record_group"):
+        for removed in ("cbx_conveyor_speed", "spin_mm_per_px", "spin_max_blur", "record_group"):
             self.assertFalse(hasattr(self.window, removed), removed)
 
     def test_window_is_resizable_and_settings_hidden_at_start(self):

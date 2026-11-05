@@ -88,6 +88,26 @@ python main.py
    - Các control cấu hình camera bị khóa trong phiên ghi; bật/tắt decode hoặc quad vẫn dùng được. Với software-trigger, dùng nút **Soft trigger** trong panel quay (gửi lệnh bất đồng bộ tới capture thread). Stop/đóng camera chạy bất đồng bộ; chỉ coi file hoàn tất khi finalize thành công.
    - Nhãn riêng hiển thị số frame **gửi ghi thành công**, camera lost delta (hoặc “không xác định”), thời gian đã quay, đường dẫn file và lỗi. Số Push thành công không chứng minh số frame thực tế trong AVI.
 
+## App hai camera
+
+MindVision (A) và Basler (B) chạy song song, cùng đọc QR, kết quả gộp một danh sách. Đóng các app camera khác trước khi chạy vì mỗi camera chỉ mở được ở một chương trình.
+
+```bash
+python main_dual.py
+```
+
+Cùng một mã trong 30 giây chỉ hiện một dòng (ghi `A`, `B` hoặc `A+B`) và chỉ gửi server một lần. Tỉ lệ đọc hiện riêng từng camera. Một camera lỗi thì camera kia vẫn chạy, bấm **Thử lại** trên khung của camera lỗi. Cấu hình lưu ở `config/dual_settings.json`, lần đầu lấy từ cấu hình của hai bản một camera; N, exposure, gain, vùng đọc đặt riêng từng camera.
+
+## Bản demo dùng camera Basler
+
+Cùng giao diện với bản demo bên dưới, dùng camera Basler (viết cho `a2A2840-48umBAS`) qua `pypylon`. Cần cài pylon của Basler (có driver USB) và cắm camera vào cổng USB 3, không qua hub. Giao diện vẫn nạp `mvsdk` nên máy cũng cần DLL MindVision.
+
+```bash
+python main_basler.py
+```
+
+Cấu hình lưu riêng ở `config/basler_settings.json`; gain tính bằng dB (mặc định 6 dB), exposure mặc định 12,9 ms. Kiểm tra nhanh camera: `python tools/test_basler.py --list`.
+
 ## Phiên bản demo cho khách hàng
 
 Bản riêng, chạy song song với app test camera ở trên; hai bản dùng chung camera nên không mở cùng lúc.
@@ -108,7 +128,7 @@ python main_demo.py
 **Cấu hình** (nút ⚙ hoặc `Ctrl+,`): cửa sổ riêng, không chặn màn hình chính, đóng lại không làm dừng hệ thống.
 
 - **Kết nối camera:** chọn camera, quét lại, **Mở** / **Đóng**. Bấm **Mở** để xem trước với đúng exposure và gain sẽ dùng khi chạy mà chưa decode (nhãn `CHỈNH CAMERA`).
-- **Băng chuyền:** **Bật decode**, **Vẽ quad**, **Exposure (ms)**, **Gain**, **Chỉ đọc dải y** (y, cao), **Chỉ đọc dải x** (x, rộng), nút **Áp dụng** để đổi ngay khi camera đang mở. Dải đọc được căn bội 16.
+- **Băng chuyền:** **N (frame / lần decode)** (1–1000, mặc định 5, có hiệu lực ngay kể cả khi đang chạy), **Bật decode**, **Vẽ quad**, **Gửi mã lên server** (tắt thì mã vẫn hiện trong danh sách nhưng không gửi đi, các mã đang chờ bị bỏ và không gửi bù khi bật lại), **Exposure (ms)**, **Gain**, **Chỉ đọc dải y** (y, cao), **Chỉ đọc dải x** (x, rộng), nút **Áp dụng** để đổi ngay khi camera đang mở. Dải đọc được căn bội 16.
 - Exposure dài hơn thì ảnh sáng hơn nhưng QR trên băng nhòe hơn; gain cao hơn thì ảnh sáng hơn nhưng nhiễu hơn. Giá trị vượt giới hạn camera sẽ bị kẹp (camera hiện tại: gain 10–640). Băng chạy theo trục x nên dải x hẹp làm QR ở trong khung ít frame hơn.
 
 **Lưu cấu hình**
@@ -157,7 +177,7 @@ python tests/test_small_qr.py                              # QR nhỏ: QR tổng
 
 Ảnh mẫu đọc từ biến môi trường `QR_SAMPLES_DIR`, mặc định `../QRDetector-research/data/images`. Thiếu ảnh thì các test liên quan được bỏ qua.
 
-Công cụ trong `tools/` (chạy từ gốc repo, xem cách dùng ở đầu mỗi file): `bench_decode.py`, `eval_videos.py`, `sim_qr.py`, `conveyor_calc.py`, `compare_recording_color.py`, `conveyor_camera_3d.html`.
+Công cụ trong `tools/` (chạy từ gốc repo, xem cách dùng ở đầu mỗi file): `bench_decode.py`, `test_basler.py`, `eval_videos.py`, `sim_qr.py`, `conveyor_calc.py`, `compare_recording_color.py`, `conveyor_camera_3d.html`.
 
 Code và dữ liệu thử nghiệm cũ nằm ở repo `../QRDetector-research`; lịch sử git của chúng ở tag `archive/research-2026-11`.
 
@@ -178,6 +198,8 @@ Các bản ghi chính gồm thao tác SDK và mã trả về dạng hex, snapsho
 QRDetector/
 ├── main.py                 # entry app test camera
 ├── main_demo.py            # entry phiên bản demo cho khách hàng
+├── main_basler.py          # entry bản demo dùng camera Basler
+├── main_dual.py            # entry app hai camera (MindVision + Basler)
 ├── logging_setup.py
 ├── mvsdk.py                # wrapper Python MindVision được vendor từ mẫu SDK Python/Basic
 ├── requirements.txt

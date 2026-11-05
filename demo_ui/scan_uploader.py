@@ -79,6 +79,7 @@ class ScanUploader:
         self._lock = threading.Lock()
         self._seen: dict[str, float] = {}          # text → thời điểm vào hàng đợi / gửi xong
         self._stopped = False
+        self._enabled = True
         self.sent_count = 0
         self.failed_count = 0
         self.dropped_count = 0
@@ -92,11 +93,11 @@ class ScanUploader:
         return self._queue.qsize()
 
     def submit(self, text: str | None) -> bool:
-        """Đưa mã vào hàng đợi; False nếu bị bỏ qua (rỗng, trùng, đã dừng)."""
+        """Đưa mã vào hàng đợi; False nếu bị bỏ qua (rỗng, trùng, đang tắt, đã dừng)."""
         if not text:
             return False
         with self._lock:
-            if self._stopped:
+            if self._stopped or not self._enabled:
                 return False
             now = self._monotonic()
             seen = self._seen.get(text)
@@ -117,6 +118,21 @@ class ScanUploader:
                     logger.warning("upload_dropped text=%s (hàng đợi đầy)", old)
         self._notify()
         return True
+
+    def set_enabled(self, enabled: bool):
+        """Tắt: bỏ các mã đang chờ và ngừng thử lại; lần gửi đang diễn ra thì không thu hồi được."""
+        with self._lock:
+            if self._stopped:
+                return
+            self._enabled = enabled
+            if enabled:
+                return
+            while True:
+                try:
+                    self._seen.pop(self._queue.get_nowait(), None)
+                except queue.Empty:
+                    break
+        self._notify()
 
     def drain(self):
         """Gửi hết hàng đợi trên thread hiện tại (chế độ autostart=False)."""
@@ -150,7 +166,7 @@ class ScanUploader:
         url = build_url(self._base_url, text)
         ok = False
         for attempt in range(self._max_retries + 1):
-            if self._stopped:
+            if self._stopped or not self._enabled:
                 break
             try:
                 self._send(url)
@@ -171,8 +187,10 @@ class ScanUploader:
                 self.sent_count += 1
                 self._seen[text] = self._monotonic()
             else:
-                self.failed_count += 1
                 self._seen.pop(text, None)         # cho phép gửi lại ở lần đọc sau
+                if not self._enabled:              # người dùng đã tắt gửi, không phải lỗi
+                    return
+                self.failed_count += 1
         if ok:
             logger.info("upload_ok text=%s", text)
         self._notify(text, ok)

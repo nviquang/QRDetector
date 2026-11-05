@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from tests import test_camera_diagnostics as fake  # noqa: E402  (dựng fake mvsdk + import module)
+from demo_ui.scan_uploader import ScanUploader  # noqa: E402
 
 
 class FrameSpeed:
@@ -67,6 +68,25 @@ sdk.CameraGetImageResolution = _get_resolution
 with unittest.mock.patch.dict(sys.modules, {"qr": fake.qr, "mvsdk": fake.sdk,
                                             "camera.camera_manager": fake.manager_module}):
     window_module = importlib.import_module("demo_ui.main_window")
+
+
+class CameraInjectionTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = fake.QApplication.instance() or fake.QApplication([])
+
+    def test_window_uses_given_camera_and_settings_class(self):
+        from demo_ui.app_settings import BaslerSettings
+        camera = unittest.mock.Mock(handle=None, camera_list=[])
+        camera.latest_frame.return_value = (None, 0)
+        camera.list_cameras.return_value = []
+        window = window_module.MainWindow(camera=camera, settings_cls=BaslerSettings)
+        self.addCleanup(window.close)
+        self.assertIs(window.mgr, camera)
+        self.assertIs(window.controller._mgr, camera)
+        self.assertEqual(window.spin_gain.value(), BaslerSettings().analog_gain)
+        self.assertEqual(window.spin_band_w.value(), BaslerSettings().band_w)
+        camera.init_sdk.assert_called_once()
 
 
 class ConveyorUiTests(unittest.TestCase):
@@ -197,6 +217,27 @@ class DecodeStatsTests(unittest.TestCase):
             self.window.on_display_tick()
         submit.assert_called_once_with(frame, 10)
 
+    def _tick_at_seq(self, seq):
+        frame = np.zeros((48, 64, 3), np.uint8)
+        with unittest.mock.patch.object(self.window.mgr, "latest_frame", return_value=(frame, seq)),                 unittest.mock.patch.object(self.window.worker, "submit", return_value=True) as submit:
+            self.window.on_display_tick()
+        return submit
+
+    def test_spin_n_decides_frames_between_decodes(self):
+        self.window._decoding = True
+        self.window.spin_n.setValue(8)
+        self._tick_at_seq(7).assert_not_called()
+        self._tick_at_seq(8).assert_called_once()
+        self._tick_at_seq(15).assert_not_called()
+        self._tick_at_seq(16).assert_called_once()
+
+    def test_spin_n_change_applies_while_running(self):
+        self.window._decoding = True
+        self.window.spin_n.setValue(20)
+        self._tick_at_seq(10).assert_not_called()
+        self.window.spin_n.setValue(10)
+        self._tick_at_seq(11).assert_called_once()
+
     def test_decode_switch_stops_submitting_and_clears_quads(self):
         frame = np.zeros((48, 64, 3), np.uint8)
         self.window._decoding = True
@@ -207,6 +248,101 @@ class DecodeStatsTests(unittest.TestCase):
                 unittest.mock.patch.object(self.window.worker, "submit", return_value=True) as submit:
             self.window.on_display_tick()
         submit.assert_not_called()
+
+
+class DecodeEveryNSettingTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = fake.QApplication.instance() or fake.QApplication([])
+
+    def make(self, **saved):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.path = Path(tmp.name) / "settings.json"
+        self.path.write_text(json.dumps(saved), encoding="utf-8")
+        window = window_module.MainWindow(settings_path=self.path, uploader=unittest.mock.Mock())
+        window.display_timer.stop()
+        window.fps_timer.stop()
+        window.worker.stop()
+        self.addCleanup(window.close)
+        return window
+
+    def test_saved_value_is_shown_and_change_is_saved(self):
+        window = self.make(decode_every_n=9)
+        self.assertEqual(window.spin_n.value(), 9)
+        window.spin_n.setValue(3)
+        self.assertTrue(window._settings_timer.isActive())
+        window._save_settings()
+        self.assertEqual(json.loads(self.path.read_text(encoding="utf-8"))["decode_every_n"], 3)
+
+
+class UploadSwitchTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = fake.QApplication.instance() or fake.QApplication([])
+
+    def make(self, **saved):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.path = Path(tmp.name) / "settings.json"
+        self.path.write_text(json.dumps(saved), encoding="utf-8")
+        self.sent = []
+        self.uploader = ScanUploader(send=self.sent.append, base_url="https://example.test",
+                                     autostart=False)
+        window = window_module.MainWindow(settings_path=self.path, uploader=self.uploader)
+        window.display_timer.stop()
+        window.fps_timer.stop()
+        window.worker.stop()
+        self.addCleanup(window.close)
+        return window
+
+    def read(self, window, text):
+        with unittest.mock.patch.object(window.stats, "on_reads", return_value=[]):
+            window.on_reads_done([types.SimpleNamespace(text=text)])
+        self.uploader.drain()
+
+    def test_on_by_default_sends_read_code(self):
+        window = self.make()
+        self.assertTrue(window.cbx_upload.isChecked())
+        self.read(window, "A")
+        self.assertEqual(self.sent, ["https://example.test/A"])
+
+    def test_saved_off_shows_unchecked_and_sends_nothing(self):
+        window = self.make(upload_enabled=False)
+        self.assertFalse(window.cbx_upload.isChecked())
+        self.read(window, "A")
+        self.assertEqual(self.sent, [])
+
+    def test_toggle_applies_immediately_and_is_saved(self):
+        window = self.make()
+        window.cbx_upload.setChecked(False)
+        self.assertTrue(window._settings_timer.isActive())
+        self.read(window, "A")
+        self.assertEqual(self.sent, [])
+        window._save_settings()
+        self.assertFalse(json.loads(self.path.read_text(encoding="utf-8"))["upload_enabled"])
+        window.cbx_upload.setChecked(True)
+        self.read(window, "B")
+        self.assertEqual(self.sent, ["https://example.test/B"])
+
+    def test_saved_off_can_be_turned_on_without_restart(self):
+        with unittest.mock.patch.object(window_module, "ScanUploader") as uploader_cls:
+            window = window_module.MainWindow(settings_path=self._saved_off())
+            window.display_timer.stop()
+            window.fps_timer.stop()
+            window.worker.stop()
+            self.addCleanup(window.close)
+        uploader_cls.assert_called_once()
+        uploader_cls.return_value.set_enabled.assert_called_with(False)
+        window.cbx_upload.setChecked(True)
+        uploader_cls.return_value.set_enabled.assert_called_with(True)
+
+    def _saved_off(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = Path(tmp.name) / "settings.json"
+        path.write_text(json.dumps({"upload_enabled": False}), encoding="utf-8")
+        return path
 
 
 class GpuSwitchTests(unittest.TestCase):

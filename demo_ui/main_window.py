@@ -41,7 +41,6 @@ from .workspace import Workspace
 
 SIGNAL_LOST_S = 3.0      # đang chạy mà không có frame mới quá lâu → báo mất tín hiệu
 SETTINGS_SAVE_DELAY_MS = 500
-DECODE_EVERY_N = 5       # số frame capture giữa hai lần gửi decode (worker bận thì bỏ frame)
 FLUSH_STOP, FLUSH_RESET = "stop", "reset"
 
 
@@ -118,21 +117,24 @@ class MainWindow(QMainWindow):
 
     upload_status = pyqtSignal(object)      # UploadStatus từ thread gửi → GUI thread
 
-    def __init__(self, settings_path: Path | None = None, uploader: ScanUploader | None = None):
+    def __init__(self, settings_path: Path | None = None, uploader: ScanUploader | None = None,
+                 camera=None, settings_cls: type[AppSettings] = AppSettings):
         """settings_path: file JSON lưu cấu hình; None = không đọc/ghi file (dùng trong test).
 
-        uploader: None + có settings_path + upload_enabled → tạo ScanUploader thật; test truyền bản giả.
+        uploader: None + có settings_path → tạo ScanUploader thật; test truyền bản giả.
+        camera: backend cùng API CameraManager mà demo dùng; None = MindVision.
+        settings_cls: lớp cấu hình, quyết định giá trị mặc định theo camera.
         """
         super().__init__()
 
         # Thành viên
         self._settings_path = settings_path
-        self.settings = AppSettings.load(settings_path) if settings_path else AppSettings()
-        if uploader is None and settings_path and self.settings.upload_enabled:
+        self.settings = settings_cls.load(settings_path) if settings_path else settings_cls()
+        if uploader is None and settings_path:     # luôn tạo để bật lại được khi đang chạy
             uploader = ScanUploader(base_url=self.settings.upload_base_url,
                                     on_status=self.upload_status.emit)
         self.uploader = uploader
-        self.mgr = CameraManager()
+        self.mgr = camera if camera is not None else CameraManager()
         self.pipeline = ImprovePipeline(device=_device_for(self.settings.use_gpu))
         self.worker = DecodeWorker(self.pipeline)
         self.worker.done.connect(self.on_decode_done)
@@ -232,6 +234,7 @@ class MainWindow(QMainWindow):
     def _bind_settings(self):
         """Đưa giá trị đã lưu lên widget, sau đó mọi thay đổi đều tự lưu (gom lại bằng timer)."""
         s = self.settings
+        self.spin_n.setValue(s.decode_every_n)
         self.cbx_decode.setChecked(s.decode_enabled)
         self.cbx_quad.setChecked(s.draw_quad)
         gpu_available = bool(self.pipeline.gpu_available)
@@ -239,6 +242,8 @@ class MainWindow(QMainWindow):
         self.cbx_gpu.setEnabled(gpu_available)
         if not gpu_available:
             self.cbx_gpu.setToolTip("Không có GPU CUDA trên máy này — nhận diện chạy bằng CPU.")
+        self.cbx_upload.setChecked(s.upload_enabled)
+        self.on_upload_toggled(s.upload_enabled)
         self.spin_exposure.setValue(s.exposure_ms)
         self.spin_gain.setValue(s.analog_gain)
         self.cbx_conveyor_band.setChecked(s.band_enabled)
@@ -252,7 +257,8 @@ class MainWindow(QMainWindow):
         self._settings_timer.setSingleShot(True)
         self._settings_timer.setInterval(SETTINGS_SAVE_DELAY_MS)
         self._settings_timer.timeout.connect(self._save_settings)
-        for signal in (self.cbx_decode.toggled, self.cbx_quad.toggled, self.cbx_gpu.toggled,
+        for signal in (self.spin_n.valueChanged, self.cbx_upload.toggled,
+                       self.cbx_decode.toggled, self.cbx_quad.toggled, self.cbx_gpu.toggled,
                        self.spin_exposure.valueChanged, self.spin_gain.valueChanged,
                        self.cbx_conveyor_band.toggled, self.spin_band_y.valueChanged, self.spin_band_h.valueChanged,
                        self.cbx_band_x.toggled, self.spin_band_x.valueChanged, self.spin_band_w.valueChanged):
@@ -260,13 +266,16 @@ class MainWindow(QMainWindow):
         self.ui.cbx_camera_list.activated.connect(self._on_camera_selected)
         self.cbx_decode.toggled.connect(self.on_decode_toggled)
         self.cbx_gpu.toggled.connect(self.on_gpu_toggled)
+        self.cbx_upload.toggled.connect(self.on_upload_toggled)
 
     def _collect_settings(self):
         s = self.settings
+        s.decode_every_n = self.spin_n.value()
         s.decode_enabled = self.cbx_decode.isChecked()
         s.draw_quad = self.cbx_quad.isChecked()
         if self.cbx_gpu.isEnabled():     # máy không có CUDA: giữ lựa chọn đã lưu
             s.use_gpu = self.cbx_gpu.isChecked()
+        s.upload_enabled = self.cbx_upload.isChecked()
         s.exposure_ms = self.spin_exposure.value()
         s.analog_gain = self.spin_gain.value()
         s.band_enabled = self.cbx_conveyor_band.isChecked()
@@ -384,6 +393,13 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(self.qr_group)
 
         row = QHBoxLayout()
+        row.addWidget(QLabel("N (frame / lần decode):"))
+        self.spin_n = QSpinBox()
+        self.spin_n.setRange(1, 1000)
+        self.spin_n.setValue(5)
+        self.spin_n.setToolTip("Cứ N frame camera thì gửi 1 frame đi đọc mã; bộ đọc đang bận thì chờ frame sau. "
+                               "Có hiệu lực ngay, kể cả khi đang chạy.")
+        row.addWidget(self.spin_n)
         self.cbx_decode = QCheckBox("Bật decode")
         self.cbx_decode.setChecked(True)
         self.cbx_quad = QCheckBox("Vẽ quad")
@@ -396,6 +412,12 @@ class MainWindow(QMainWindow):
         row.addWidget(self.cbx_gpu)
         row.addStretch(1)
         layout.addLayout(row)
+
+        self.cbx_upload = QCheckBox("Gửi mã lên server")
+        self.cbx_upload.setChecked(True)
+        self.cbx_upload.setToolTip("Tắt thì mã vẫn được đọc và hiện trong danh sách nhưng không gửi đi; "
+                                   "các mã đang chờ gửi bị bỏ. Có hiệu lực ngay, kể cả khi đang chạy.")
+        layout.addWidget(self.cbx_upload)
 
         row = QHBoxLayout()
         row.addWidget(QLabel("Exposure (ms):"))
@@ -481,6 +503,10 @@ class MainWindow(QMainWindow):
 
     def on_gpu_toggled(self, checked: bool):
         self.pipeline.set_device(_device_for(checked))
+
+    def on_upload_toggled(self, checked: bool):
+        if self.uploader is not None:
+            self.uploader.set_enabled(checked)
 
     def _show_decode_state(self):
         if self.cbx_decode.isChecked():
@@ -612,7 +638,7 @@ class MainWindow(QMainWindow):
         # Đếm frame theo seq — mỗi N frame capture được → submit decode 1 lần
         if (self._decoding and self.cbx_decode.isChecked()
                 and seq > self._last_seq
-                and seq - self._last_decode_seq >= self.worker.decode_every(DECODE_EVERY_N)):
+                and seq - self._last_decode_seq >= self.worker.decode_every(self.spin_n.value())):
             if self.worker.submit(frame, seq):
                 self._last_decode_seq = seq
 

@@ -58,6 +58,18 @@ class AppSettingsTests(unittest.TestCase):
     def test_defaults_give_a_bright_enough_image(self):
         self.assertEqual((AppSettings().exposure_ms, AppSettings().analog_gain), (12.9, 40))
 
+    def test_decode_every_n_defaults_to_5_and_round_trips(self):
+        self.assertEqual(AppSettings().decode_every_n, 5)
+        AppSettings(decode_every_n=12).save(self.path)
+        self.assertEqual(AppSettings.load(self.path).decode_every_n, 12)
+
+    def test_invalid_decode_every_n_falls_back_to_default(self):
+        self.path.parent.mkdir(parents=True)
+        for bad in (0, 1001, 2.5, True, "5"):
+            self.path.write_text(json.dumps({"decode_every_n": bad}), encoding="utf-8")
+            with self.assertLogs("solution.settings", level="WARNING"):
+                self.assertEqual(AppSettings.load(self.path).decode_every_n, 5)
+
     def test_use_gpu_defaults_on_and_round_trips(self):
         self.assertTrue(AppSettings().use_gpu)
         AppSettings(use_gpu=False).save(self.path)

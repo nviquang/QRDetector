@@ -119,7 +119,7 @@ class Workspace(QWidget):
         body = QHBoxLayout()
         body.setContentsMargins(12, 12, 12, 12)
         body.setSpacing(12)
-        body.addWidget(self.video, 65)
+        body.addWidget(self._build_video_area(), 65)
         body.addLayout(self._build_results(), 35)
         layout.addLayout(body, 1)
         layout.addWidget(self._build_footer())
@@ -132,6 +132,9 @@ class Workspace(QWidget):
         self.set_kpis(0, None, None)
 
     # ── Dựng giao diện ────────────────────────────────────────────────────────
+
+    def _build_video_area(self) -> QWidget:
+        return self.video
 
     def _build_header(self, menu: QMenu) -> QFrame:
         bar = QFrame(self)
