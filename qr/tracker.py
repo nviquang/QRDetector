@@ -53,20 +53,27 @@ class Track:
         return len(self.texts) > 1
 
 
+STRICT_GATE_CAP_PX = 900.0     # cổng tối đa của track mới; không có trần thì tem sau nhập vào lượt trước
+STRICT_SPEED_SLACK = 0.25      # nới cổng track đang chạy theo quãng đường đã qua, phòng vận tốc lệch
+
+
 class PassTracker:
     def __init__(self, max_gap: int = 5, gate_px: float = 400.0, gate_sizes: float = 3.0,
-                 max_speed_px: float = 0.0):
+                 max_speed_px: float = 0.0, strict: bool = False):
         """
         max_gap:      số frame (theo chỉ số frame gốc) được phép mất dấu trước khi đóng lượt.
         gate_px:      khoảng cách tối đa (px) từ vị trí dự đoán khi track chưa có vận tốc.
         gate_sizes:   khi đã có vận tốc, cổng = gate_sizes × kích thước QR (dự đoán đã bù chuyển động).
         max_speed_px: tốc độ QR lớn nhất (px / frame) — track chưa có vận tốc được nới cổng thêm
                       max_speed_px × số frame đã qua (app chỉ decode cách nhau hàng chục seq).
+        strict:       cổng track mới có trần, và detection đọc ra nội dung khác không ghép vào lượt:
+                      mã thứ hai không bị nuốt, vẫn được báo trong first_reads.
         """
         self.max_gap = max_gap
         self.gate_px = gate_px
         self.gate_sizes = gate_sizes
         self.max_speed_px = max_speed_px
+        self.strict = strict
         self._active: list[Track] = []
         self._next_id = 0
 
@@ -105,12 +112,19 @@ class PassTracker:
         candidates = []
         for ti, track in enumerate(tracks):
             px, py = track.predict(frame_idx)
+            dt = frame_idx - track.last_frame
             moving = track.observations > 1
             if moving:
                 gate = self.gate_sizes * max(track.size, 1.0)
+                if self.strict:
+                    gate += STRICT_SPEED_SLACK * float(np.hypot(*track.velocity)) * dt
             else:
-                gate = self.gate_px + self.max_speed_px * (frame_idx - track.last_frame)
+                gate = self.gate_px + self.max_speed_px * dt
+                if self.strict:
+                    gate = min(gate, STRICT_GATE_CAP_PX)
             for oi, obs in enumerate(observations):
+                if self.strict and obs.text and track.text and obs.text != track.text:
+                    continue
                 d = float(np.hypot(obs.center[0] - px, obs.center[1] - py))
                 if d <= gate:
                     candidates.append((d, ti, oi))

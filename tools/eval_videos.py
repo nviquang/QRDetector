@@ -284,7 +284,7 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
 
     from qr import ImprovePipeline
-    pipe = ImprovePipeline()
+    pipe = ImprovePipeline(multi_frame=False)
     labels = load_labels(args.labels)
     rows = []
     for name, kind, paths in expand_inputs(args.inputs, args.sequence):

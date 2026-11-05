@@ -34,6 +34,18 @@ with patch.dict(sys.modules, {"camera.camera_manager": _manager, "qr": _qr}):
 FRAME = np.zeros((768, 2448, 3), np.uint8)
 
 
+class WorkerForwardingTests(unittest.TestCase):
+    def test_decode_every_and_exposure_go_to_reader(self):
+        worker = window_module.DecodeWorker(FakePipeline())
+        self.addCleanup(worker.stop)
+        worker._reader = Mock()
+        worker._reader.decode_every.return_value = 2
+        self.assertEqual(worker.decode_every(5), 2)
+        worker.set_exposure_ms(12.9)
+        worker._reader.set_exposure_ms.assert_called_once_with(12.9)
+        worker._reader = PassReader(FakePipeline())
+
+
 class FakePipeline:
     def __init__(self, fail=False):
         self.fail = fail

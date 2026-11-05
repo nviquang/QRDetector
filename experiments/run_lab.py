@@ -57,6 +57,7 @@ SINGLES = dict(
     M16=dict(stack_max=16),
     Y200=dict(yolo_every_ms=200.0),
     Y800=dict(yolo_every_ms=800.0),
+    PROD=dict(),     # không phải LabReader: chạy qr.PassReader thật, xem ProductReader
 )
 
 
@@ -103,8 +104,59 @@ def make_scene(name: str, seed: int, detector, n_passes: int = 40) -> SimScene:
     return scene
 
 
+class _ScenePipeline:
+    """Pipeline cho qr.PassReader: detect lấy từ cache của scene, cùng kết quả với LabReader."""
+
+    multi_frame = True
+    code_pattern = CODE_RE.pattern
+    roi_margin = 0.25
+
+    def __init__(self, scene):
+        self.scene = scene
+        self.idx = 0
+        self.detected = False
+
+    def detect(self, image_bgr):
+        self.detected = True
+        return self.scene.detect(self.idx)
+
+
+class ProductReader:
+    """Bọc qr.PassReader bằng giao diện LabReader, đồng hồ ảo theo frame."""
+
+    def __init__(self, cfg: LabConfig, scene):
+        from qr.pass_reader import PassReader
+        self.cfg, self.scene = cfg, scene
+        self.pipe = _ScenePipeline(scene)
+        self.now = 0.0
+        self.reader = PassReader(self.pipe, clock=lambda: self.now)
+        self.reader.set_exposure_ms(scene.exposure_ms)
+        self.emitted, self.all_finished = [], []
+        self.jobs = dict(yolo=0, fast=0)
+        self.total_ms = 0.0
+        self.attempts = self.gated = self.skipped = 0
+        self.step_hits, self.step_ms = {}, {}
+
+    def next_gap_frames(self, idx: int, base_n: int) -> int:
+        return self.reader.decode_every(base_n)
+
+    def process(self, frame, idx: int, now_s: float) -> float:
+        self.pipe.idx, self.pipe.detected, self.now = idx, False, now_s
+        r = self.reader.process(frame, idx)
+        ms = r.cascade_ms + (self.scene.detect_ms if self.pipe.detected else 0.0)
+        self.jobs["yolo" if self.pipe.detected else "fast"] += 1
+        self.total_ms += ms
+        self.skipped += r.skipped
+        self.all_finished += r.finished
+        self.emitted += [(t.text, idx, float(t.center[0]), float(t.center[1]), t.track_id) for t in r.first_reads]
+        return ms
+
+    def finish(self):
+        self.all_finished += self.reader.flush()
+
+
 def simulate(cfg: LabConfig, scene, memo: dict, base_n: int) -> dict:
-    reader = LabReader(cfg, scene, memo)
+    reader = ProductReader(cfg, scene) if cfg.name == "PROD" else LabReader(cfg, scene, memo)
     t = 0.0
     last_idx = -1
     t0 = time.perf_counter()
@@ -123,7 +175,7 @@ def simulate(cfg: LabConfig, scene, memo: dict, base_n: int) -> dict:
     return score(reader, scene, base_n, time.perf_counter() - t0)
 
 
-def score(reader: LabReader, scene, base_n: int, wall: float) -> dict:
+def score(reader, scene, base_n: int, wall: float) -> dict:
     cfg = reader.cfg
     n = len(scene.passes)
     if scene.kind == "semi":

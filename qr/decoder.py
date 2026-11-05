@@ -118,12 +118,13 @@ def _zxing_corners(barcode) -> np.ndarray:
                     np.float32)
 
 
-def read_zxing_gray(gray: np.ndarray) -> tuple[str, np.ndarray] | None:
-    """zxing-cpp binarizer LocalAverage — rất nhanh (~1ms) trên ROI đã upscale.
+def read_zxing_gray(gray: np.ndarray, binarizer=None) -> tuple[str, np.ndarray] | None:
+    """zxing-cpp, mặc định binarizer LocalAverage — rất nhanh (~1ms) trên ROI đã upscale.
 
     Trả (nội dung, 4 góc QR (4, 2) trong tọa độ ``gray``) hoặc None.
     """
-    for b in zxingcpp.read_barcodes(gray, formats=zxingcpp.BarcodeFormat.QRCode, try_rotate=True):
+    options = {} if binarizer is None else {"binarizer": binarizer}
+    for b in zxingcpp.read_barcodes(gray, formats=zxingcpp.BarcodeFormat.QRCode, try_rotate=True, **options):
         if b.valid and b.text:
             return b.text, _zxing_corners(b)
     return None

@@ -351,6 +351,7 @@ class MainWindow(QMainWindow):
         self._refresh_results()
 
     def _on_camera_configured(self):
+        self.worker.set_exposure_ms(self.spin_exposure.value())
         self.cameraList = list(self.mgr.camera_list)
         self._fill_camera_list()
         self.ui.status_bar.setText("Camera đã mở.")
@@ -466,6 +467,7 @@ class MainWindow(QMainWindow):
         if applied is None:
             self.ui.status_bar.setText("Không áp dụng được (camera đang đóng).")
             return
+        self.worker.set_exposure_ms(applied["exposure_us"] / 1000)
         self._apply_error = "" if applied["ok"] else "[MỘT SỐ THAM SỐ LỖI — xem log] "
         self.ui.status_bar.setText("{}Đã áp dụng: exposure {:.2f} ms, gain {}, khung {}".format(
             self._apply_error, applied["exposure_us"] / 1000, applied["analog_gain"], applied["resolution"]))
@@ -610,7 +612,7 @@ class MainWindow(QMainWindow):
         # Đếm frame theo seq — mỗi N frame capture được → submit decode 1 lần
         if (self._decoding and self.cbx_decode.isChecked()
                 and seq > self._last_seq
-                and seq - self._last_decode_seq >= DECODE_EVERY_N):
+                and seq - self._last_decode_seq >= self.worker.decode_every(DECODE_EVERY_N)):
             if self.worker.submit(frame, seq):
                 self._last_decode_seq = seq
 

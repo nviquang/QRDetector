@@ -19,6 +19,41 @@ def _run(tracker, frames):
     return done + tracker.finish()
 
 
+class StrictTrackerTests(unittest.TestCase):
+    def test_far_second_qr_does_not_join_new_track(self):
+        tracker = PassTracker(max_gap=100, max_speed_px=30.0, strict=True)
+        tracker.update(0, [Observation((100, 300), 60, "A")])
+        tracker.update(90, [Observation((1500, 300), 60, "B")])
+        self.assertEqual(len(tracker.active), 2)
+
+    def test_lenient_tracker_merges_same_situation(self):
+        tracker = PassTracker(max_gap=100, max_speed_px=30.0)
+        tracker.update(0, [Observation((100, 300), 60, "A")])
+        tracker.update(90, [Observation((1500, 300), 60, "B")])
+        self.assertEqual(len(tracker.active), 1)
+
+    def test_different_text_starts_new_pass(self):
+        tracker = PassTracker(max_gap=100, max_speed_px=30.0, strict=True)
+        tracker.update(0, [Observation((100, 300), 60, "A")])
+        tracker.update(5, [Observation((120, 300), 60, "B")])
+        self.assertEqual(sorted(t.text for t in tracker.active), ["A", "B"])
+
+    def test_same_or_unread_text_stays_in_pass(self):
+        tracker = PassTracker(max_gap=100, max_speed_px=30.0, strict=True)
+        tracker.update(0, [Observation((100, 300), 60, "A")])
+        tracker.update(5, [Observation((120, 300), 60, None)])
+        tracker.update(10, [Observation((140, 300), 60, "A")])
+        self.assertEqual(len(tracker.active), 1)
+
+    def test_moving_gate_widens_with_distance(self):
+        tracker = PassTracker(max_gap=100, max_speed_px=30.0, strict=True)
+        tracker.update(0, [Observation((100, 300), 60)])
+        tracker.update(10, [Observation((240, 300), 60)])     # 14 px/seq
+        # sau 40 seq dự đoán x=800; lệch 300 px: ngoài 3 × 60 nhưng trong 180 + 0,25 × 14 × 40
+        tracker.update(50, [Observation((1100, 300), 60)])
+        self.assertEqual(len(tracker.active), 1)
+
+
 class PassTrackerTests(unittest.TestCase):
     def test_one_qr_crossing_is_one_pass(self):
         frames = [(i, [Observation((100 + 45 * i, 500), 60, "A" if i in (5, 9) else None)])

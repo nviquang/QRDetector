@@ -60,7 +60,7 @@ def main():
     ap.add_argument("--max-frames", type=int, default=0, help="0 = không giới hạn")
     args = ap.parse_args()
 
-    pipeline = ImprovePipeline(imgsz=args.imgsz, device=args.device, half=args.half)
+    pipeline = ImprovePipeline(imgsz=args.imgsz, device=args.device, half=args.half, multi_frame=False)
     pipeline.warmup((args.band[1], 2448) if args.band else (2048, 2448))
     reader = PassReader(pipeline, PassTracker(max_gap=max(100, 3 * args.every)))
     rows, passes = [], []

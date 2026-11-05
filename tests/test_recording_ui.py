@@ -24,6 +24,7 @@ class RecordingUiTests(unittest.TestCase):
         qr.ImprovePipeline = Mock()
         qr.PassReader = Mock()
         qr.PassReader.return_value.flush.return_value = []
+        qr.PassReader.return_value.decode_every.side_effect = lambda n: n
         spec = importlib.util.spec_from_file_location(
             "ui._recording_test_window", ROOT / "ui" / "main_window.py")
         cls.module = importlib.util.module_from_spec(spec)

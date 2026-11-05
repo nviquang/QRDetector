@@ -40,6 +40,7 @@ class WorkspaceUiTests(unittest.TestCase):
         qr.ImprovePipeline = Mock()
         qr.PassReader = Mock()
         qr.PassReader.return_value.flush.return_value = []
+        qr.PassReader.return_value.decode_every.side_effect = lambda n: n
         spec = importlib.util.spec_from_file_location(
             "demo_ui._workspace_test_window", ROOT / "demo_ui" / "main_window.py")
         cls.module = importlib.util.module_from_spec(spec)
@@ -152,6 +153,25 @@ class WorkspaceUiTests(unittest.TestCase):
             self.mgr.latest_frame.return_value = (frame, 11)
             self.window.on_display_tick()
             submit.assert_called_once_with(frame, 11)
+
+    def test_display_tick_uses_interval_from_worker(self):
+        frame = np.zeros((48, 64, 3), np.uint8)
+        self.window._decoding = True
+        self.window._last_seq = self.window._last_decode_seq = 10
+        self.mgr.latest_frame.return_value = (frame, 12)
+        with patch.object(self.window.worker, "submit", return_value=True) as submit:
+            self.window.on_display_tick()
+            submit.assert_not_called()      # mặc định 5 frame một lần
+            self.window._last_seq = 10
+            with patch.object(self.window.worker, "decode_every", return_value=2):
+                self.window.on_display_tick()
+            submit.assert_called_once_with(frame, 12)
+
+    def test_configured_camera_passes_exposure_to_worker(self):
+        self.window.spin_exposure.setValue(7.5)
+        with patch.object(self.window.worker, "set_exposure_ms") as set_exposure:
+            self.window._on_camera_configured()
+        set_exposure.assert_called_once_with(7.5)
 
     def test_start_error_is_shown_in_video_area_with_recovery_buttons(self):
         self.mgr.list_cameras.return_value = []

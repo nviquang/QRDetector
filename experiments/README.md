@@ -1,6 +1,6 @@
 # Thử nghiệm tăng tỉ lệ đọc QR
 
-Mã thử nghiệm độc lập, không sửa `qr/`, `ui/`, `demo_ui/`. Cấu hình tốt nhất **chưa được tích hợp vào app** và **chưa được kiểm chứng trên băng chuyền thật**.
+Cấu hình tốt nhất đã được tích hợp vào `qr/` (xem `qr/multiframe.py`) nhưng **chưa được kiểm chứng trên băng chuyền thật**. Quay về bản cũ: `ImprovePipeline(multi_frame=False)`.
 
 ## Kết luận
 
@@ -13,6 +13,8 @@ Cấu hình nên dùng: `H0+H1v1+H2+H3+H4+H6k3+H7k05+SW`.
 | Thời gian TB mỗi lần xử lý, đo tuần tự (gồm 150 ms detect giả định khi có YOLO) | ~250 ms | ~145 ms |
 
 Về tỉ lệ đọc, cấu hình này ngang `H4+H6k3+H7k05+SW` (201/264). Nó được chọn vì không đọc sai (bản kia đọc sai 1 lần) và ít tách lượt hơn (28 so với 35).
+
+Code sản phẩm (`qr.PassReader`, cấu hình `PROD`, `run_semi_prod.sh`) trên đúng các điều kiện đó: **197/264 (74,6%), 0 đọc sai**, so với 202/264 của bản thử nghiệm. Khoảng lệch này nằm trong mức dao động giữa các đợt chạy song song, nhưng chưa chứng minh được hai bản tương đương hoàn toàn.
 
 ## Thành phần của cấu hình
 
@@ -65,10 +67,10 @@ Hạt giống 1 (dò tìm, 15 cấu hình, /264): `H4+H6k3+H7k05+SW` 198, `H4+H6
 
 ## Giới hạn
 
-- Chỉ có 11 QR, ít mẫu, tất cả cùng một đợt chụp. Lượt lặp cùng một ảnh không độc lập với nhau.
+- Chỉ có 11 ảnh QR, ít mẫu, chỉ 3 nội dung mã khác nhau (`000000585545`, `000000585546`, `000000585623`). Lượt lặp cùng một ảnh không độc lập với nhau.
 - Chuyển động, vệt mờ và nhiễu là mô phỏng. Chưa biết mức sáng/nhiễu thật ở cấu hình hiện tại (exposure 12,9 ms, gain 40) vì không có ảnh không nén gần đây.
 - Thời gian detect giả định cố định (150 ms dải, 200 ms toàn khung); đồng hồ ảo được đo từ thời gian thật của cascade. Các đợt chạy song song bị tranh CPU nên chậm hơn thực tế: base ở E là 4/33 khi song song, 8/33 khi tuần tự; đề xuất là 26/33 và 28/33.
-- Bản thử nghiệm dùng `LabReader`, chưa phải code sản phẩm. Khi tích hợp cần giữ cả H1v1 và kiểm tra lại với mọi định dạng mã thực tế.
+- Các bảng so sánh dùng `LabReader`, trừ dòng `PROD`. Bộ lọc 12 chữ số suy ra từ 3 mã trên, cần xác nhận với mọi tem thực tế.
 
 ## Việc cần làm để xác nhận
 

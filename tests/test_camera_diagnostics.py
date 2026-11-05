@@ -157,7 +157,9 @@ qr.ImprovePipeline = type("UnusedPipeline", (), {"__init__": lambda self, **k: N
                                                  "set_device": lambda self, device: None})
 qr.PassReader = type("UnusedReader", (), {"__init__": lambda self, *a, **k: None,
                                            "warmup": lambda self: None,
-                                           "flush": lambda self: []})
+                                           "flush": lambda self: [],
+                                           "decode_every": lambda self, n: n,
+                                           "set_exposure_ms": lambda self, ms: None})
 with patch.dict(sys.modules, {"qr": qr, "mvsdk": sdk,
                               "camera.camera_manager": manager_module}):
     window_module = importlib.import_module("ui.main_window")

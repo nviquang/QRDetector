@@ -103,6 +103,13 @@ class DecodeWorker(QObject):
         with self._lock:
             return self._busy or self._pending is not None
 
+    def decode_every(self, default_n: int) -> int:
+        """Số frame nên chờ giữa hai lần gửi: ngắn hơn khi có lượt đang chờ đọc."""
+        return self._reader.decode_every(default_n)
+
+    def set_exposure_ms(self, exposure_ms: float | None):
+        self._reader.set_exposure_ms(exposure_ms)
+
     def stop(self):
         self._stop = True
         self._thread.join(timeout=5)
@@ -376,6 +383,7 @@ class MainWindow(QMainWindow):
         if applied is None:
             self.ui.status_bar.setText("Không áp dụng được (camera đang quay hoặc đang đóng).")
             return
+        self.worker.set_exposure_ms(applied["exposure_us"] / 1000)
         self.ui_init_param()
         names = self.mgr.frame_speed_names()
         speed = applied["frame_speed"]
@@ -738,7 +746,7 @@ class MainWindow(QMainWindow):
         # Đếm frame theo seq — mỗi N frame capture được → submit decode 1 lần
         if (self.cbx_decode.isChecked()
                 and seq > self._last_seq
-                and seq - self._last_decode_seq >= self.spin_n.value()):
+                and seq - self._last_decode_seq >= self.worker.decode_every(self.spin_n.value())):
             if self.worker.submit(frame, seq):
                 self._last_decode_seq = seq
 
