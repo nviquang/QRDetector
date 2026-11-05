@@ -7,8 +7,9 @@ một lần (phòng nhãn bị thay tại chỗ). Mỗi detection kèm một Ove
 đọc được, ngược lại hình chữ nhật xoay của mask; kèm vận tốc lượt để bù độ trễ khi vẽ lên frame mới.
 
 Pipeline có ``multi_frame=True`` (ImprovePipeline mặc định) thì đọc bằng PassDecoder thay cascade từng
-frame: YOLO tối đa mỗi 400 ms, xen giữa là job đoán vị trí lượt chưa đọc được từ vận tốc (không detect,
-không WeChat, nhịp 2 frame); bỏ QR chạm mép hoặc bị méo.
+frame: YOLO tối đa mỗi 400 ms, xen giữa là job đoán vị trí lượt chưa đọc chắc từ vận tốc (không detect,
+nhịp 2 frame); bỏ QR chạm mép hoặc bị méo; 2 lần đọc giống nhau mới báo mã, lượt kết thúc với 1 lần đọc thì
+coi như không đọc được (log ``pass_unconfirmed``) vì tem không có định dạng cố định để lọc đọc sai.
 """
 
 from __future__ import annotations
@@ -72,32 +73,32 @@ def _observation(det: Detection) -> Observation:
 
 class PassReader:
     def __init__(self, pipeline, tracker: PassTracker | None = None,
-                 min_votes: int | None = None, recheck_every: int = 5, clock=time.monotonic,
-                 announce_votes: int = 1):
+                 min_votes: int = 2, recheck_every: int = 5, clock=time.monotonic,
+                 announce_votes: int | None = None):
         """
         pipeline:      có ``detect``, ``decode_detection`` và ``warmup`` (ImprovePipeline).
         tracker:       mặc định max_gap=100 theo seq camera (~2 s ở 50 fps) — frame được decode
                        cách nhau cỡ (thời gian decode × fps) seq; max_speed_px=30 px/seq (~1500 px/s ở
                        50 fps, đủ cho 30 cm/s ở 0,25 mm/px) để QR mới vẫn ghép được qua khoảng đó.
-        min_votes:     số lần đọc giống nhau để coi lượt là đọc chắc; mặc định 1 khi có lọc định dạng
-                       của chế độ nhiều frame, 2 khi không.
+        min_votes:     số lần đọc giống nhau để coi lượt là đọc chắc.
         recheck_every: số lần bỏ cascade liên tiếp trước khi đọc kiểm tra lại.
         clock:         nguồn thời gian (giây), test truyền đồng hồ giả.
-        announce_votes: số lần đọc giống nhau trước khi báo trong first_reads.
+        announce_votes: số lần đọc giống nhau trước khi báo trong first_reads; mặc định bằng min_votes ở
+                       chế độ nhiều frame, 1 ở chế độ từng frame.
         """
         self._pipeline = pipeline
         multi_frame = getattr(pipeline, "multi_frame", False) is True
         self._decoder = PassDecoder(pipeline.code_pattern, pipeline.roi_margin) if multi_frame else None
         self._tracker = tracker if tracker is not None else PassTracker(
             max_gap=100, max_speed_px=30.0, strict=multi_frame)
-        self._min_votes = min_votes if min_votes is not None else (1 if multi_frame else 2)
+        self._min_votes = min_votes
         self._clock = clock
         self._exposure_ms: float | None = None
         self._seq_rate: float | None = None      # seq / giây, đo từ các frame được gửi
         self._last_seen: tuple[int, float] | None = None
         self._last_yolo_t = float("-inf")
         self._last_overlays: list[Overlay] = []
-        self._announce_votes = announce_votes
+        self._announce_votes = announce_votes if announce_votes is not None else (min_votes if multi_frame else 1)
         self._awaiting_read = False
         self._recheck_every = recheck_every
         self._skips: dict[int, int] = {}         # track_id → số lần bỏ cascade liên tiếp
@@ -233,7 +234,7 @@ class PassReader:
             drift = 0.1 * float(np.hypot(*t.velocity)) * (frame_idx - t.last_frame)
             half = t.size * 0.5 + max(0.15 * t.size, drift)
             bbox = np.array([px - half, py - half, px + half, py + half], np.float32)
-            hit = self._decoder.read(image_bgr, bbox, None, t, self._blur_lengths(t), cheap_only=True)
+            hit = self._decoder.read(image_bgr, bbox, None, t, self._blur_lengths(t))
             if hit:
                 t.texts[hit.text] += 1
                 texts.append(hit.text)
@@ -247,6 +248,9 @@ class PassReader:
 
     def _close(self, tracks: list[Track]) -> list[Track]:
         for t in tracks:
+            if t.text and t.votes < self._announce_votes and t.track_id not in self._announced:
+                logger.info("pass_unconfirmed id=%d text=%s votes=%d", t.track_id, t.text, t.votes)
+                t.texts.clear()
             self._skips.pop(t.track_id, None)
             self._announced.discard(t.track_id)
             if self._decoder is not None:

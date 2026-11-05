@@ -41,6 +41,63 @@ class ResolveDeviceTests(unittest.TestCase):
         self.assertIsNone(det.polygon_xy)
 
 
+class BandImgszTests(unittest.TestCase):
+    def predict_imgsz(self, shape, imgsz=1280):
+        with patch("qr.detector._QRDetector"), patch("torch.cuda.is_available", return_value=False):
+            det = QRDetector(device="cpu", imgsz=imgsz)
+        det._predict(np.zeros((*shape, 3), np.uint8))
+        return det._detector.model.predict.call_args.kwargs["imgsz"]
+
+    def test_narrow_band_uses_more_resolution(self):
+        self.assertEqual(self.predict_imgsz((400, 2856)), 1600)
+
+    def test_full_frame_keeps_configured_size(self):
+        self.assertEqual(self.predict_imgsz((2848, 2856)), 1280)
+        self.assertEqual(self.predict_imgsz((768, 2448)), 1280)
+
+    def test_never_lowers_configured_size(self):
+        self.assertEqual(self.predict_imgsz((400, 2856), imgsz=1920), 1920)
+
+
+class DegenerateMaskTests(unittest.TestCase):
+    """qrdet.crop_qr cố cấp phát vài PiB khi mask của detection đầu suy biến: không được mất cả frame."""
+
+    def make(self):
+        with patch("qr.detector._QRDetector"), patch("torch.cuda.is_available", return_value=False):
+            det = QRDetector(device="cpu")
+        det._predict = Mock(return_value=[list(range(3))])
+        return det
+
+    @staticmethod
+    def raw(i):
+        quad = np.full((4, 2), float(i), np.float32)
+        return dict(padded_quad_xy=quad, bbox_xyxy=np.array([i, i, i + 1, i + 1], np.float32), confidence=0.9,
+                    polygon_xy=quad)
+
+    def test_bad_detection_is_dropped_and_others_kept(self):
+        def convert(results, image):
+            if len(results) > 1 or results[0] == 1:
+                raise MemoryError("1.28 PiB")
+            return [self.raw(results[0])]
+
+        det = self.make()
+        with patch("qr.detector._yolo_v8_results_to_dict", convert), self.assertLogs("solution.qr", "WARNING"):
+            found = det.detect(np.zeros((32, 32, 3), np.uint8))
+        self.assertEqual([float(d.bbox_xyxy[0]) for d in found], [0.0, 2.0])
+
+    def test_normal_frame_converts_all_at_once(self):
+        calls = []
+
+        def convert(results, image):
+            calls.append(len(results))
+            return [self.raw(i) for i in results]
+
+        det = self.make()
+        with patch("qr.detector._yolo_v8_results_to_dict", convert):
+            self.assertEqual(len(det.detect(np.zeros((32, 32, 3), np.uint8))), 3)
+        self.assertEqual(calls, [3])
+
+
 class SetDeviceTests(unittest.TestCase):
     def make(self, half=False):
         with patch("qr.detector._QRDetector"), patch("torch.cuda.is_available", return_value=False):

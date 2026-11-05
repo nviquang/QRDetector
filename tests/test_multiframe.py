@@ -132,9 +132,10 @@ class PassDecoderTests(unittest.TestCase):
         decoder = PassDecoder(PATTERN)
         t = track()
         hits = []
-        for _ in range(8):
-            frame, bbox = noisy_frame(rng)
-            hits.append(decoder.read(frame, bbox, None, t, [], cheap_only=True))
+        with mock.patch.object(multiframe, "read_wechat_gray", return_value=None):
+            for _ in range(8):
+                frame, bbox = noisy_frame(rng)
+                hits.append(decoder.read(frame, bbox, None, t, []))
         self.assertIsNone(hits[0])
         hit = next(h for h in hits if h)
         self.assertEqual(hit.text, CODE)
@@ -144,9 +145,11 @@ class PassDecoderTests(unittest.TestCase):
     def test_no_stack_without_track(self):
         rng = np.random.default_rng(3)
         decoder = PassDecoder(PATTERN)
-        for _ in range(8):
-            frame, bbox = noisy_frame(rng)
-            self.assertIsNone(decoder.read(frame, bbox, None, None, []))
+        with mock.patch.object(multiframe, "read_wechat_gray", return_value=None) as wechat:
+            for _ in range(8):
+                frame, bbox = noisy_frame(rng)
+                self.assertIsNone(decoder.read(frame, bbox, None, None, []))
+        self.assertEqual(wechat.call_count, 8 * 3)   # chỉ WeChat từng frame, không có lần trên ảnh xếp chồng
 
     def test_forget_clears_collected_frames(self):
         rng = np.random.default_rng(4)
@@ -158,7 +161,7 @@ class PassDecoderTests(unittest.TestCase):
         decoder.forget(t.track_id)
         self.assertNotIn(t.track_id, decoder.states)
 
-    def test_wechat_runs_only_on_full_jobs_and_only_on_stack(self):
+    def test_wechat_runs_on_every_frame_and_once_more_on_stack(self):
         rng = np.random.default_rng(5)
         with mock.patch.object(multiframe, "read_wechat_gray", return_value=None) as wechat, \
                 mock.patch.object(multiframe, "read_zxing_gray", return_value=None):
@@ -167,13 +170,24 @@ class PassDecoderTests(unittest.TestCase):
             for _ in range(2):      # chưa đủ ảnh để xếp chồng
                 frame, bbox = noisy_frame(rng)
                 decoder.read(frame, bbox, None, t, [])
-            self.assertEqual(wechat.call_count, 0)
-            frame, bbox = noisy_frame(rng)
-            decoder.read(frame, bbox, None, t, [], cheap_only=True)
-            self.assertEqual(wechat.call_count, 0)
+            self.assertEqual(wechat.call_count, 2 * 3)
             frame, bbox = noisy_frame(rng)
             decoder.read(frame, bbox, None, t, [])
-            self.assertEqual(wechat.call_count, 1)
+            self.assertEqual(wechat.call_count, 3 * 3 + 1)
+
+    def test_wechat_read_stops_later_steps_and_maps_corners_to_frame(self):
+        frame, (det,) = frame_with_qrs([(CODE, (200, 100))])
+        decoder = PassDecoder(PATTERN)
+        pad = multiframe.UPSCALE_PAD_PER_SCALE * 4
+        pts = np.array([[0, 0], [40, 0], [40, 40], [0, 40]], np.float32) + pad
+        x1, y1, _, _ = multiframe.roi_bounds(frame.shape, det.bbox_xyxy, 0.25)
+        with mock.patch.object(multiframe, "read_zxing_gray", return_value=None), \
+                mock.patch.object(multiframe, "read_wechat_gray", return_value=(CODE, pts)) as wechat:
+            hit = decoder.read(frame, det.bbox_xyxy, None, track(), [3.0])
+        self.assertEqual(wechat.call_count, 1)
+        self.assertEqual(hit.text, CODE)
+        np.testing.assert_allclose(hit.corners[2], [x1 + 10, y1 + 10])
+        self.assertNotIn(1, decoder.states)     # đọc được thì không gom ảnh
 
     def test_roi_touching_frame_edge_is_not_collected(self):
         rng = np.random.default_rng(6)

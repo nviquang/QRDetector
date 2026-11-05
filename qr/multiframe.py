@@ -3,11 +3,12 @@
 ``PassDecoder.read`` chạy từ rẻ đến đắt, dừng ở bước đầu tiên đọc được mã đúng định dạng:
   1. ROI × 4 → zxing (ba binarizer)
   2. Warp + Quiet Zone → zxing (chỉ khi có Detection)
-  3. Wiener theo vận tốc lượt → zxing
-  4. Từ 3 ROI hỏng trở lên: xếp chồng tối đa 8 ảnh → zxing, Wiener → zxing, WeChat CNN
+  3. WeChat trên từng frame: stretch × 4 CNN, CLAHE × 4, ROI × 3 CNN
+  4. Wiener theo vận tốc lượt → zxing
+  5. Từ 3 ROI hỏng trở lên: xếp chồng tối đa 8 ảnh → zxing, Wiener → zxing, WeChat CNN
 
-WeChat chỉ chạy trên ảnh xếp chồng: chạy trên từng frame làm worker bận, gom được ít frame hơn.
-Cấu hình chọn bằng thử nghiệm, số liệu và giới hạn xem ``experiments/README.md``.
+Đo trên Basler ở f/4 (tem phẳng, nét): zxing một mình đọc 84% frame, thêm WeChat từng frame 99%; xếp chồng
++ Wiener giữ được 83–93% ở vệt mờ 3–4 px, lúc đọc từng frame đã tụt mạnh. Xem ``experiments/README.md``.
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ import zxingcpp
 
 from .decoder import read_wechat_gray, read_zxing_gray
 from .improved_pipeline import Decoded, _warp_zxing_step
-from .preprocessor import UPSCALE_PAD_PER_SCALE, roi_bounds, upscale_gray
+from .preprocessor import UPSCALE_PAD_PER_SCALE, clahe, roi_bounds, stretch_contrast, upscale_gray
 from .tracker import Track
 
 logger = logging.getLogger("solution.qr")
@@ -34,6 +35,7 @@ STACK_SCALE = 4
 STACK_PAD = 64
 WIENER_K = 0.05
 _MAX_LOGGED_REJECTS = 200
+_WECHAT_STEPS = ((stretch_contrast, 4, True), (clahe, 4, False), (None, 3, True))   # (tiền xử lý, phóng, CNN)
 
 
 def wiener_motion(gray: np.ndarray, length: float, angle_rad: float, k: float) -> np.ndarray:
@@ -113,8 +115,8 @@ class PassDecoder:
         self.states.pop(track_id, None)
 
     def read(self, image_bgr: np.ndarray, bbox, det, track: Track | None,
-             blur_lengths: list[float], cheap_only: bool = False) -> Decoded | None:
-        """det=None: ROI đoán từ vận tốc lượt. cheap_only: bỏ WeChat. track=None: chỉ đọc frame này."""
+             blur_lengths: list[float]) -> Decoded | None:
+        """det=None: ROI đoán từ vận tốc lượt. track=None: chỉ đọc frame này, không gom ảnh."""
         x1, y1, x2, y2 = roi_bounds(image_bgr.shape, bbox, self._margin)
         roi = image_bgr[y1:y2, x1:x2]
         if roi.size == 0:
@@ -128,7 +130,7 @@ class PassDecoder:
                 state = self.states.setdefault(track.track_id, _PassState())
                 self._collect(state, image_bgr, bbox)
                 if len(state.rois) >= STACK_MIN:
-                    hit = self._read_stacked(state, track, blur_lengths, cheap_only)
+                    hit = self._read_stacked(state, track, blur_lengths)
         return hit
 
     def _accept(self, hit, to_frame) -> Decoded | None:
@@ -153,7 +155,16 @@ class PassDecoder:
         if det is not None:
             warped = _warp_zxing_step(image_bgr, det, gray, origin)
             if warped is not None:
-                return self._accept((warped.text, warped.corners), lambda pts: pts)
+                hit = self._accept((warped.text, warped.corners), lambda pts: pts)
+                if hit:
+                    return hit
+        for preprocess, scale, cnn in _WECHAT_STEPS:
+            source = gray if preprocess is None else preprocess(gray)
+            pad = UPSCALE_PAD_PER_SCALE * scale
+            hit = self._accept(read_wechat_gray(upscale_gray(source, scale), use_cnn=cnn),
+                               lambda pts: (pts - pad) / scale + origin)
+            if hit:
+                return hit
         return None
 
     def _read_deblurred(self, gray, origin, track, blur_lengths) -> Decoded | None:
@@ -178,7 +189,7 @@ class PassDecoder:
             state.rois.append(got[0])
             state.origin = got[1]
 
-    def _read_stacked(self, state: _PassState, track, blur_lengths, cheap_only) -> Decoded | None:
+    def _read_stacked(self, state: _PassState, track, blur_lengths) -> Decoded | None:
         stacked = stack_rois(list(state.rois))
         origin = state.origin
         to_frame = lambda pts: (pts - STACK_PAD) / STACK_SCALE + origin  # noqa: E731
@@ -194,6 +205,4 @@ class PassDecoder:
                 hit = self._accept(read_zxing_gray(pad(out)), to_frame)
                 if hit:
                     return hit
-        if not cheap_only:
-            return self._accept(read_wechat_gray(pad(stacked), use_cnn=True), to_frame)
-        return None
+        return self._accept(read_wechat_gray(pad(stacked), use_cnn=True), to_frame)

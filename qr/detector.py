@@ -13,6 +13,11 @@ from qrdet.qrdet import _prepare_input, _yolo_v8_results_to_dict
 
 logger = logging.getLogger("solution.qr")
 
+# Dải hẹp (vùng đọc quanh băng): cạnh dài bị thu về imgsz làm QR quá nhỏ, độ tin cậy tụt dưới ngưỡng. Đo trên
+# Basler 2856×400: imgsz 1280 cho 0,21–0,71, 1600 cho ~0,8 và không chậm hơn vì ảnh có ít điểm hơn nhiều.
+BAND_ASPECT = 4.0
+BAND_MIN_IMGSZ = 1600
+
 
 @dataclass
 class Detection:
@@ -75,10 +80,28 @@ class QRDetector:
         self.detect(np.zeros((shape[0], shape[1], 3), np.uint8))
 
     def _predict(self, image):
+        h, w = image.shape[:2]
+        imgsz = max(self._imgsz, BAND_MIN_IMGSZ) if max(h, w) >= BAND_ASPECT * min(h, w) else self._imgsz
         return self._detector.model.predict(
-            source=image, conf=self._conf_th, iou=self._detector._nms_iou, imgsz=self._imgsz,
+            source=image, conf=self._conf_th, iou=self._detector._nms_iou, imgsz=imgsz,
             device=self._device, half=self._half, max_det=100, agnostic_nms=True, verbose=False,
         )
+
+    @staticmethod
+    def _to_dicts(result, image) -> list[dict]:
+        """qrdet cắt thử detection đầu bằng padded quad; mask suy biến cho quad rất lớn và cấp phát vài PiB.
+        Khi đó xử lý riêng từng detection, bỏ cái lỗi, để không mất các QR khác trong frame."""
+        try:
+            return _yolo_v8_results_to_dict(results=result, image=image)
+        except MemoryError as e:
+            logger.warning("Bỏ detection có mask suy biến: %s", e)
+        dicts = []
+        for i in range(len(result)):
+            try:
+                dicts += _yolo_v8_results_to_dict(results=result[i:i + 1], image=image)
+            except MemoryError:
+                continue
+        return dicts
 
     def detect(self, image_bgr: np.ndarray) -> list[Detection]:
         """Nhận ảnh BGR, trả về danh sách Detection (có thể rỗng)."""
@@ -91,7 +114,7 @@ class QRDetector:
             logger.warning("Lỗi CUDA khi detect (%s) — chuyển detector sang CPU", e)
             self._device, self._half = "cpu", False
             predictions = self._predict(image)
-        raw = _yolo_v8_results_to_dict(results=predictions[0], image=image)
+        raw = self._to_dicts(predictions[0], image)
         results = []
         for d in raw:
             # ưu tiên padded_quad_xy để bao trọn QR khi warp; fallback về quad_xy

@@ -55,8 +55,8 @@ class FakeDecoder:
         self.calls = []
         self.forgotten = []
 
-    def read(self, image, bbox, det, track, blur_lengths, cheap_only=False):
-        self.calls.append(dict(bbox=bbox, det=det, track=track, blur=blur_lengths, cheap=cheap_only))
+    def read(self, image, bbox, det, track, blur_lengths):
+        self.calls.append(dict(bbox=bbox, det=det, track=track, blur=blur_lengths))
         text = self.answers.pop(0) if len(self.answers) > 1 else self.answers[0]
         return Decoded(text, CORNERS) if text else None
 
@@ -67,6 +67,8 @@ class FakeDecoder:
 def make_reader(frames, answers, **kw):
     clock = Clock()
     pipe = FakePipeline(frames)
+    kw.setdefault("min_votes", 1)       # đa số test về nhịp job, không về số phiếu; AnnounceVotesTests xét riêng
+    kw.setdefault("announce_votes", 1)
     reader = PassReader(pipe, clock=clock, **kw)
     decoder = FakeDecoder(answers)
     reader._decoder = decoder
@@ -95,12 +97,11 @@ class FastJobTests(unittest.TestCase):
         self.assertEqual([t.text for t in result.first_reads], [CODE])
         self.assertEqual(result.results, [CODE])
 
-    def test_fast_job_predicts_position_and_runs_cheap_only(self):
+    def test_fast_job_predicts_position(self):
         reader, _, decoder, clock = self.two_sightings([None])
         clock.now += 0.1
         reader.process(IMG, 3)
         call = decoder.calls[-1]
-        self.assertTrue(call["cheap"])
         self.assertIsNone(call["det"])
         x1, y1, x2, y2 = call["bbox"]
         # lần cuối thấy ở seq 1 tâm x=545, vận tốc 45 → seq 3 tâm 635
@@ -201,9 +202,43 @@ class AnnounceVotesTests(unittest.TestCase):
         reader.process(IMG, 2)
         self.assertEqual(len(decoder.calls), 3)
 
-    def test_announces_on_first_read_by_default(self):
-        reader, *_ = make_reader(moving(1), [CODE], min_votes=2)
-        self.assertEqual([t.text for t in reader.process(IMG, 0).first_reads], [CODE])
+    def defaults(self, answers, frames):
+        reader = PassReader(FakePipeline(frames), clock=Clock())
+        reader._decoder = FakeDecoder(answers)
+        return reader
+
+    def test_multi_frame_needs_two_votes_by_default(self):
+        reader = self.defaults([CODE], moving(2))
+        self.assertEqual(reader.process(IMG, 0).first_reads, [])
+        reader._clock.now += 0.5
+        self.assertEqual([t.text for t in reader.process(IMG, 1).first_reads], [CODE])
+
+    def test_single_frame_mode_still_announces_on_first_read(self):
+        pipe = mock.Mock(spec=["warmup", "detect", "decode_detection"])
+        pipe.detect.return_value = [detection_at(500, 300)]
+        pipe.decode_detection.return_value = Decoded(CODE, CORNERS)
+        self.assertEqual([t.text for t in PassReader(pipe).process(IMG, 0).first_reads], [CODE])
+
+    def test_pass_ending_with_one_vote_is_unread_and_logged(self):
+        reader, _, _, clock = make_reader(moving(1) + [[]], [CODE], min_votes=2, announce_votes=2)
+        reader.process(IMG, 0)
+        clock.now += 1.0
+        with self.assertLogs("solution.qr", "INFO") as logs:
+            result = reader.process(IMG, 500)
+        self.assertIsNone(result.finished[0].text)
+        self.assertTrue(any("pass_unconfirmed" in line and CODE in line for line in logs.output))
+
+    def test_flush_also_drops_unconfirmed_text(self):
+        reader, *_ = make_reader(moving(1), [CODE], min_votes=2, announce_votes=2)
+        reader.process(IMG, 0)
+        self.assertIsNone(reader.flush()[0].text)
+
+    def test_confirmed_pass_keeps_text_at_end(self):
+        reader, _, _, clock = make_reader(moving(2), [CODE], min_votes=2, announce_votes=2)
+        reader.process(IMG, 0)
+        clock.now += 0.5
+        reader.process(IMG, 1)
+        self.assertEqual(reader.flush()[0].text, CODE)
 
 
 class VotesAndTrackerTests(unittest.TestCase):
