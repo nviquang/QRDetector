@@ -2,6 +2,8 @@
 
 Cấu hình tốt nhất đã được tích hợp vào `qr/` (xem `qr/multiframe.py`) nhưng **chưa được kiểm chứng trên băng chuyền thật**. Quay về bản cũ: `ImprovePipeline(multi_frame=False)`.
 
+**Sau khi có các số dưới đây, cấu hình đã đổi và chưa đo lại đầy đủ:** tem không có định dạng cố định nên đã bỏ bộ lọc mã (H1) và phần loại theo kích thước của H2. Bảng dưới vẫn là số của bản có lọc 12 chữ số. Bỏ lọc làm tăng nguy cơ đọc sai; bài đo báo mã sau 1 hay 2 phiếu (`run_semi_prod.sh`, `PROD1`, `PROD2`) chưa chạy xong.
+
 ## Kết luận
 
 Cấu hình nên dùng: `H0+H1v1+H2+H3+H4+H6k3+H7k05+SW`.

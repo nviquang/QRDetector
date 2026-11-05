@@ -29,7 +29,6 @@ from .decoder import read_wechat_gray, read_zxing_gray
 from .detector import Detection, QRDetector
 from .preprocessor import UPSCALE_PAD_PER_SCALE, clahe, roi_bounds, stretch_contrast, upscale_gray
 
-CODE_PATTERN = r"^\d{12}$"   # định dạng mã trên tem; đổi tem thì phải đổi ở đây, nếu không sẽ không đọc được gì
 _WARP_SIZE = 256
 _WARP_PAD = 32
 
@@ -92,12 +91,13 @@ class ImprovePipeline:
         device: str = "auto",
         half: bool = False,
         multi_frame: bool = True,
-        code_pattern: str | None = CODE_PATTERN,
+        code_pattern: str | None = None,
     ):
         """detector: object có ``detect(image_bgr) -> list[Detection]`` — mặc định QRDetector (YOLO,
         GPU nếu có); test truyền detector giả để không phải nạp model.
         multi_frame: PassReader đọc nhiều frame (xem qr/multiframe.py); False = cascade từng frame như cũ.
-        code_pattern: regex mã hợp lệ cho chế độ nhiều frame; None = nhận mọi nội dung."""
+        code_pattern: regex mã hợp lệ cho chế độ nhiều frame; None = nhận mọi nội dung (tem không có
+                      định dạng cố định)."""
         self.multi_frame = multi_frame
         self.code_pattern = code_pattern
         self.roi_margin = roi_margin

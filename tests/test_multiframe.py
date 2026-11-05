@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT))
 
 from qr import multiframe  # noqa: E402
 from qr.decoder import read_zxing_gray  # noqa: E402
+from qr.improved_pipeline import ImprovePipeline  # noqa: E402
 from qr.multiframe import PassDecoder, stack_rois, wiener_motion  # noqa: E402
 from qr.tracker import Track  # noqa: E402
 from tests.qr_fixtures import frame_with_qrs, qr_image, symbol_corners  # noqa: E402
@@ -48,6 +49,12 @@ def noisy_frame(rng, shape=(400, 600), at=(250, 150), lo=8, hi=25, noise=10.0):
 
 def track(track_id=1, velocity=(0.0, 0.0)):
     return Track(track_id, 0, 0, (0.0, 0.0), 75.0, velocity=velocity, observations=2)
+
+
+class DefaultPipelineTests(unittest.TestCase):
+    def test_pipeline_accepts_any_code_format_by_default(self):
+        pipeline = ImprovePipeline(detector=object())
+        self.assertIsNone(pipeline.code_pattern)
 
 
 class StackRoisTests(unittest.TestCase):

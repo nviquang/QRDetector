@@ -57,7 +57,8 @@ SINGLES = dict(
     M16=dict(stack_max=16),
     Y200=dict(yolo_every_ms=200.0),
     Y800=dict(yolo_every_ms=800.0),
-    PROD=dict(),     # không phải LabReader: chạy qr.PassReader thật, xem ProductReader
+    PROD1=dict(),    # không phải LabReader: chạy qr.PassReader thật, xem ProductReader. Báo mã sau 1 phiếu
+    PROD2=dict(),    # như PROD1, báo mã sau 2 phiếu
 )
 
 
@@ -108,7 +109,7 @@ class _ScenePipeline:
     """Pipeline cho qr.PassReader: detect lấy từ cache của scene, cùng kết quả với LabReader."""
 
     multi_frame = True
-    code_pattern = CODE_RE.pattern
+    code_pattern = None
     roi_margin = 0.25
 
     def __init__(self, scene):
@@ -129,7 +130,8 @@ class ProductReader:
         self.cfg, self.scene = cfg, scene
         self.pipe = _ScenePipeline(scene)
         self.now = 0.0
-        self.reader = PassReader(self.pipe, clock=lambda: self.now)
+        votes = 2 if cfg.name == "PROD2" else 1
+        self.reader = PassReader(self.pipe, clock=lambda: self.now, min_votes=votes, announce_votes=votes)
         self.reader.set_exposure_ms(scene.exposure_ms)
         self.emitted, self.all_finished = [], []
         self.jobs = dict(yolo=0, fast=0)
@@ -156,7 +158,7 @@ class ProductReader:
 
 
 def simulate(cfg: LabConfig, scene, memo: dict, base_n: int) -> dict:
-    reader = ProductReader(cfg, scene) if cfg.name == "PROD" else LabReader(cfg, scene, memo)
+    reader = ProductReader(cfg, scene) if cfg.name.startswith("PROD") else LabReader(cfg, scene, memo)
     t = 0.0
     last_idx = -1
     t0 = time.perf_counter()

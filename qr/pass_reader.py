@@ -8,14 +8,13 @@ một lần (phòng nhãn bị thay tại chỗ). Mỗi detection kèm một Ove
 
 Pipeline có ``multi_frame=True`` (ImprovePipeline mặc định) thì đọc bằng PassDecoder thay cascade từng
 frame: YOLO tối đa mỗi 400 ms, xen giữa là job đoán vị trí lượt chưa đọc được từ vận tốc (không detect,
-không WeChat, nhịp 2 frame); bỏ QR chạm mép/kích thước bất thường; 1 phiếu đúng định dạng là đủ.
+không WeChat, nhịp 2 frame); bỏ QR chạm mép hoặc bị méo.
 """
 
 from __future__ import annotations
 
 import logging
 import time
-from collections import deque
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -73,7 +72,8 @@ def _observation(det: Detection) -> Observation:
 
 class PassReader:
     def __init__(self, pipeline, tracker: PassTracker | None = None,
-                 min_votes: int | None = None, recheck_every: int = 5, clock=time.monotonic):
+                 min_votes: int | None = None, recheck_every: int = 5, clock=time.monotonic,
+                 announce_votes: int = 1):
         """
         pipeline:      có ``detect``, ``decode_detection`` và ``warmup`` (ImprovePipeline).
         tracker:       mặc định max_gap=100 theo seq camera (~2 s ở 50 fps) — frame được decode
@@ -83,6 +83,7 @@ class PassReader:
                        của chế độ nhiều frame, 2 khi không.
         recheck_every: số lần bỏ cascade liên tiếp trước khi đọc kiểm tra lại.
         clock:         nguồn thời gian (giây), test truyền đồng hồ giả.
+        announce_votes: số lần đọc giống nhau trước khi báo trong first_reads.
         """
         self._pipeline = pipeline
         multi_frame = getattr(pipeline, "multi_frame", False) is True
@@ -96,7 +97,7 @@ class PassReader:
         self._last_seen: tuple[int, float] | None = None
         self._last_yolo_t = float("-inf")
         self._last_overlays: list[Overlay] = []
-        self._read_sizes: deque = deque(maxlen=30)
+        self._announce_votes = announce_votes
         self._awaiting_read = False
         self._recheck_every = recheck_every
         self._skips: dict[int, int] = {}         # track_id → số lần bỏ cascade liên tiếp
@@ -152,8 +153,6 @@ class PassReader:
                     self._skips[track.track_id] = 0
                 hit = self._decode(image_bgr, det, track)
                 text = hit.text if hit else None
-                if text:
-                    self._read_sizes.append(observations[i].size)
                 quad = display_quad(det, hit.corners if hit else None)
                 observations[i].text = text
             texts.append(text)
@@ -175,7 +174,8 @@ class PassReader:
         return self._close(self._tracker.finish())
 
     def _new_reads(self) -> list[Track]:
-        reads = [t for t in self._tracker.active if t.text and t.track_id not in self._announced]
+        reads = [t for t in self._tracker.active
+                 if t.text and t.votes >= self._announce_votes and t.track_id not in self._announced]
         self._announced.update(t.track_id for t in reads)
         return reads
 
@@ -188,19 +188,13 @@ class PassReader:
         return self._decoder.read(image_bgr, det.bbox_xyxy, det, track, blur)
 
     def _gated(self, det: Detection) -> bool:
-        """QR chạm mép, méo hoặc lệch xa kích thước các mã vừa đọc: khó đọc được, không đáng tốn cascade."""
+        """QR chạm mép hoặc bị méo: khó đọc được, không đáng tốn cascade. Không xét cỡ: tem dài ngắn khác nhau."""
         h, w = self._shape
         x1, y1, x2, y2 = (float(v) for v in det.bbox_xyxy)
         if x1 <= 1 or y1 <= 1 or x2 >= w - 2 or y2 >= h - 2:
             return True
         side_w, side_h = x2 - x1, y2 - y1
-        if min(side_w, side_h) <= 0 or max(side_w, side_h) / min(side_w, side_h) > 1.7:
-            return True
-        if len(self._read_sizes) >= 3:
-            expected = float(np.median(self._read_sizes))
-            size = max(side_w, side_h)
-            return size < expected * 0.6 or size > expected * 1.7
-        return False
+        return min(side_w, side_h) <= 0 or max(side_w, side_h) / min(side_w, side_h) > 1.7
 
     def _measure_seq_rate(self, frame_idx: int, now: float):
         if self._last_seen is not None:

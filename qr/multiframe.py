@@ -138,7 +138,7 @@ class PassDecoder:
         if self._pattern is not None and not self._pattern.match(text):
             if text not in self._rejected and len(self._rejected) < _MAX_LOGGED_REJECTS:
                 self._rejected.add(text)
-                logger.warning("code_rejected text=%s (sai định dạng, kiểm tra CODE_PATTERN nếu đây là mã thật)", text)
+                logger.warning("code_rejected text=%s (sai định dạng, kiểm tra code_pattern nếu đây là mã thật)", text)
             return None
         return Decoded(text, to_frame(pts).astype(np.float32))
 

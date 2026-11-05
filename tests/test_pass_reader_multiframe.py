@@ -164,7 +164,8 @@ class GateTests(unittest.TestCase):
         self.assertEqual(result.texts, [None])
         self.assertEqual(len(result.overlays), 1)
 
-    def test_size_far_from_recent_reads_skips_decoder(self):
+    def test_label_of_another_size_is_still_decoded(self):
+        # Tem không có định dạng cố định: mã dài hơn thì QR lớn hơn, không được loại theo kích thước
         frames = [[detection_at(500 + i, 300, size=60)] for i in range(3)] + [[detection_at(1500, 300, size=200)]]
         reader, _, decoder, clock = make_reader(frames, [CODE])
         for i in range(3):
@@ -172,7 +173,7 @@ class GateTests(unittest.TestCase):
             clock.now += 1.0
         before = len(decoder.calls)
         reader.process(IMG, 1000)
-        self.assertEqual(len(decoder.calls), before)
+        self.assertEqual(len(decoder.calls), before + 1)
 
     def test_elongated_detection_skips_decoder(self):
         det = detection_at(500, 300)
@@ -180,6 +181,29 @@ class GateTests(unittest.TestCase):
         reader, _, decoder, _ = make_reader([[det]], [CODE])
         reader.process(IMG, 0)
         self.assertEqual(decoder.calls, [])
+
+
+class AnnounceVotesTests(unittest.TestCase):
+    def test_second_vote_required_before_announcing(self):
+        reader, _, _, clock = make_reader(moving(3), [CODE], min_votes=2, announce_votes=2)
+        first = reader.process(IMG, 0)
+        clock.now += 0.5
+        second = reader.process(IMG, 1)
+        self.assertEqual(first.first_reads, [])
+        self.assertEqual([t.text for t in second.first_reads], [CODE])
+
+    def test_track_with_one_vote_keeps_being_read(self):
+        reader, _, decoder, clock = make_reader(moving(3), [CODE, None], min_votes=2, announce_votes=2)
+        reader.process(IMG, 0)
+        clock.now += 0.5
+        reader.process(IMG, 1)
+        clock.now += 0.5
+        reader.process(IMG, 2)
+        self.assertEqual(len(decoder.calls), 3)
+
+    def test_announces_on_first_read_by_default(self):
+        reader, *_ = make_reader(moving(1), [CODE], min_votes=2)
+        self.assertEqual([t.text for t in reader.process(IMG, 0).first_reads], [CODE])
 
 
 class VotesAndTrackerTests(unittest.TestCase):
