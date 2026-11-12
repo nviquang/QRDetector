@@ -49,6 +49,7 @@ _VALID = {
     "band_w": _is_int(16, 4096),
     "upload_enabled": _is_bool,
     "upload_base_url": lambda v: isinstance(v, str) and v.startswith(("http://", "https://")),
+    "keyboard_output_enabled": _is_bool,
 }
 
 
@@ -120,6 +121,7 @@ class BaslerSettings(AppSettings):
     """Mặc định cho camera Basler a2A2840-48umBAS: gain tính bằng dB, sensor 2856×2848."""
     analog_gain: int = 6
     band_w: int = 2840
+    keyboard_output_enabled: bool = False   # gõ mã vào ô đang chọn của ứng dụng khác
 
 
 @dataclass

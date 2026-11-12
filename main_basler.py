@@ -29,6 +29,7 @@ try:
 
     from demo_ui.app_settings import BASLER_SETTINGS_PATH, BaslerSettings
     from demo_ui import theme
+    from demo_ui.keyboard_output import KeyboardTyper
     from demo_ui.main_window import MainWindow
 except (ImportError, FileNotFoundError, OSError) as e:
     _fail(
@@ -46,7 +47,7 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     theme.apply(app)
     window = MainWindow(settings_path=BASLER_SETTINGS_PATH, camera=BaslerCameraManager(),
-                        settings_cls=BaslerSettings)
+                        settings_cls=BaslerSettings, keyboard_typer=KeyboardTyper())
     window.setWindowTitle("QR Conveyor Reader — Basler — " + (LABEL if fallback else "không đọc nền"))
     window.spin_gain.setSuffix(" dB")
     window.show()

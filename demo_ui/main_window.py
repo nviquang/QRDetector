@@ -32,6 +32,7 @@ from ui.main_window import DecodeWorker as BaseDecodeWorker
 from ui.main_window import draw_overlays, frame_to_qimage
 
 from .app_settings import AppSettings
+from .keyboard_output import KeyboardTyper
 from .run_controller import RunController, RunState, StartRequest
 from .scan_uploader import ScanUploader
 from .session_stats import SessionStats, age_text
@@ -123,14 +124,18 @@ class DecodeWorker(BaseDecodeWorker):
 class MainWindow(QMainWindow):
 
     upload_status = pyqtSignal(object)      # UploadStatus từ thread gửi → GUI thread
+    keyboard_status = pyqtSignal(object)    # KeyStatus từ thread gõ → GUI thread
 
     def __init__(self, settings_path: Path | None = None, uploader: ScanUploader | None = None,
-                 camera=None, settings_cls: type[AppSettings] = AppSettings):
+                 camera=None, settings_cls: type[AppSettings] = AppSettings,
+                 keyboard_typer: KeyboardTyper | None = None):
         """settings_path: file JSON lưu cấu hình; None = không đọc/ghi file (dùng trong test).
 
         uploader: None + có settings_path → tạo ScanUploader thật; test truyền bản giả.
         camera: backend cùng API CameraManager mà demo dùng; None = MindVision.
         settings_cls: lớp cấu hình, quyết định giá trị mặc định theo camera.
+        keyboard_typer: có thì hiện ô bật gõ mã vào ô đang chọn; settings_cls phải có
+            keyboard_output_enabled (BaslerSettings). None = không có tính năng này.
         """
         super().__init__()
 
@@ -141,6 +146,9 @@ class MainWindow(QMainWindow):
             uploader = ScanUploader(base_url=self.settings.upload_base_url,
                                     on_status=self.upload_status.emit)
         self.uploader = uploader
+        self.keyboard_typer = keyboard_typer
+        if keyboard_typer is not None:
+            keyboard_typer.on_status = self.keyboard_status.emit
         self.mgr = camera if camera is not None else CameraManager()
         self.pipeline = ImprovePipeline(device=_device_for(self.settings.use_gpu))
         self.worker = DecodeWorker(self.pipeline)
@@ -177,6 +185,7 @@ class MainWindow(QMainWindow):
         self._bind_settings()
 
         self.upload_status.connect(self.on_upload_status)
+        self.keyboard_status.connect(self.on_keyboard_status)
         self.controller.state_changed.connect(self._on_run_state)
         self.controller.configured.connect(self._on_camera_configured)
         self.controller.camera_chosen.connect(self._remember_camera)
@@ -274,6 +283,11 @@ class MainWindow(QMainWindow):
         self.cbx_decode.toggled.connect(self.on_decode_toggled)
         self.cbx_gpu.toggled.connect(self.on_gpu_toggled)
         self.cbx_upload.toggled.connect(self.on_upload_toggled)
+        if self.cbx_keyboard is not None:
+            self.cbx_keyboard.setChecked(s.keyboard_output_enabled)
+            self.on_keyboard_toggled(s.keyboard_output_enabled)
+            self.cbx_keyboard.toggled.connect(lambda *_: self._settings_timer.start())
+            self.cbx_keyboard.toggled.connect(self.on_keyboard_toggled)
 
     def _collect_settings(self):
         s = self.settings
@@ -283,6 +297,8 @@ class MainWindow(QMainWindow):
         if self.cbx_gpu.isEnabled():     # máy không có CUDA: giữ lựa chọn đã lưu
             s.use_gpu = self.cbx_gpu.isChecked()
         s.upload_enabled = self.cbx_upload.isChecked()
+        if self.cbx_keyboard is not None:
+            s.keyboard_output_enabled = self.cbx_keyboard.isChecked()
         s.exposure_ms = self.spin_exposure.value()
         s.analog_gain = self.spin_gain.value()
         s.band_enabled = self.cbx_conveyor_band.isChecked()
@@ -426,6 +442,13 @@ class MainWindow(QMainWindow):
                                    "các mã đang chờ gửi bị bỏ. Có hiệu lực ngay, kể cả khi đang chạy.")
         layout.addWidget(self.cbx_upload)
 
+        self.cbx_keyboard = None
+        if self.keyboard_typer is not None:
+            self.cbx_keyboard = QCheckBox("Gõ mã vào ô đang chọn")
+            self.cbx_keyboard.setToolTip("Đọc được mã thì gõ vào ô đang có con trỏ ở ứng dụng khác rồi nhấn Enter. "
+                                         "Mã trùng trong 30 giây chỉ gõ một lần. Có hiệu lực ngay, kể cả khi đang chạy.")
+            layout.addWidget(self.cbx_keyboard)
+
         row = QHBoxLayout()
         row.addWidget(QLabel("Exposure (ms):"))
         self.spin_exposure = QDoubleSpinBox()
@@ -515,6 +538,9 @@ class MainWindow(QMainWindow):
         if self.uploader is not None:
             self.uploader.set_enabled(checked)
 
+    def on_keyboard_toggled(self, checked: bool):
+        self.keyboard_typer.set_enabled(checked)
+
     def _show_decode_state(self):
         if self.cbx_decode.isChecked():
             self.workspace.set_processing_idle()
@@ -572,6 +598,8 @@ class MainWindow(QMainWindow):
         self.worker.stop()
         if self.uploader is not None:
             self.uploader.stop()
+        if self.keyboard_typer is not None:
+            self.keyboard_typer.stop()
         event.accept()
 
     # ── Camera list / open / close ────────────────────────────────────────────
@@ -692,6 +720,9 @@ class MainWindow(QMainWindow):
         if self.uploader is not None:
             for track in tracks:
                 self.uploader.submit(track.text)
+        if self.keyboard_typer is not None:
+            for track in tracks:
+                self.keyboard_typer.submit(track.text)
         for row in self.stats.on_reads(tracks):
             self.workspace.upsert_row(row)
         self.workspace.flash_latest()
@@ -714,6 +745,9 @@ class MainWindow(QMainWindow):
         if status.last_ok is False:
             self.ui.status_bar.setText("Gửi mã {} lên server lỗi ({} mã chờ)".format(
                 status.last_text, status.pending))
+
+    def on_keyboard_status(self, status):
+        self.workspace.set_keyboard_status(status.message, status.ok)
 
     def on_decode_failed(self, msg):
         self.ui.status_bar.setText("Decode lỗi: {}".format(msg[:100]))
