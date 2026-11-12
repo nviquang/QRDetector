@@ -40,11 +40,14 @@ except (ImportError, FileNotFoundError, OSError) as e:
 
 
 if __name__ == "__main__":
+    from qr import pass_fallback
+    from qr.solvers import LABEL
+    fallback = pass_fallback.enable()
     app = QApplication(sys.argv)
     theme.apply(app)
     window = MainWindow(settings_path=BASLER_SETTINGS_PATH, camera=BaslerCameraManager(),
                         settings_cls=BaslerSettings)
-    window.setWindowTitle("QR Conveyor Reader — Basler")
+    window.setWindowTitle("QR Conveyor Reader — Basler — " + (LABEL if fallback else "không đọc nền"))
     window.spin_gain.setSuffix(" dB")
     window.show()
     sys.exit(app.exec_())

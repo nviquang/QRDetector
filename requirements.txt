@@ -10,3 +10,4 @@ qrdet==2.5
 torch==2.14.1+cu126
 torchvision==0.29.1+cu126
 pypylon==26.9
+scipy==1.17.1

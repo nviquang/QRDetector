@@ -66,10 +66,17 @@ class DecodeWorker(BaseDecodeWorker):
         """Chốt các lượt đang mở trên thread worker, rồi phát ``flushed``. Signal từ một thread đến
         GUI theo đúng thứ tự, nên khi GUI nhận ``flushed`` thì mọi kết quả cũ đã được xử lý xong."""
         if not self._thread.is_alive():
-            self.flushed.emit(purpose, self._reader.flush())
+            self._emit_flush(purpose)
             return
         with self._lock:
             self._flushes.append(purpose)
+
+    def _emit_flush(self, purpose: str):
+        tracks = self._reader.flush()
+        late = self._reader.take_late_reads()   # đọc nền xong đúng lúc chốt: báo mã trước khi chốt lượt
+        if late and purpose != FLUSH_RESET:
+            self.reads.emit(late)
+        self.flushed.emit(purpose, tracks)
 
     def _loop(self):
         try:
@@ -86,7 +93,7 @@ class DecodeWorker(BaseDecodeWorker):
                 job, self._pending = self._pending, None
                 self._busy = job is not None
             for purpose in flushes:
-                self.flushed.emit(purpose, self._reader.flush())
+                self._emit_flush(purpose)
             if job is None:
                 threading.Event().wait(0.02)
                 continue

@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from . import pass_fallback
 from .corrector import display_quad
 from .detector import Detection
 from .multiframe import PassDecoder
@@ -74,7 +75,7 @@ def _observation(det: Detection) -> Observation:
 class PassReader:
     def __init__(self, pipeline, tracker: PassTracker | None = None,
                  min_votes: int = 2, recheck_every: int = 5, clock=time.monotonic,
-                 announce_votes: int | None = None):
+                 announce_votes: int | None = None, fallback=None):
         """
         pipeline:      có ``detect``, ``decode_detection`` và ``warmup`` (ImprovePipeline).
         tracker:       mặc định max_gap=100 theo seq camera (~2 s ở 50 fps) — frame được decode
@@ -85,6 +86,7 @@ class PassReader:
         clock:         nguồn thời gian (giây), test truyền đồng hồ giả.
         announce_votes: số lần đọc giống nhau trước khi báo trong first_reads; mặc định bằng min_votes ở
                        chế độ nhiều frame, 1 ở chế độ từng frame.
+        fallback:      bộ đọc nền cho lượt không đọc được (qr/pass_fallback.py); mặc định theo enable().
         """
         self._pipeline = pipeline
         multi_frame = getattr(pipeline, "multi_frame", False) is True
@@ -105,6 +107,10 @@ class PassReader:
         self._announced: set[int] = set()        # track_id đã báo trong first_reads, lượt còn mở
         self._last_idx: int | None = None
         self._shape: tuple[int, int] | None = None
+        self._fallback = fallback if fallback is not None else pass_fallback.active()
+        self._crops: dict[int, list] = {}        # track_id → crop của lượt chưa đọc chắc
+        self._held: dict[int, Track] = {}        # khóa việc nền → lượt đang chờ kết quả
+        self._late_reads: list[Track] = []       # lượt bộ đọc nền vừa đọc được, chờ báo
 
     def warmup(self):
         self._pipeline.warmup()
@@ -118,7 +124,7 @@ class PassReader:
         return min(default_n, FAST_EVERY_N) if self._awaiting_read else default_n
 
     def process(self, image_bgr: np.ndarray, frame_idx: int) -> FrameResult:
-        finished: list[Track] = []
+        finished: list[Track] = self._poll_fallback()
         shape = image_bgr.shape[:2]
         if self._last_idx is not None and (frame_idx < self._last_idx or shape != self._shape):
             finished += self._close(self._tracker.finish())   # camera mở lại / đổi ROI
@@ -160,6 +166,7 @@ class PassReader:
             overlays.append(Overlay(quad, text is not None, velocity, frame_idx, shape))
         t2 = time.perf_counter()
         finished += self._close(self._tracker.update(frame_idx, observations))
+        self._collect_crops(image_bgr, detections, observations, matched, frame_idx)
         first_reads = self._new_reads()
         self._last_overlays = overlays
         self._awaiting_read = self._decoder is not None and bool(self._waiting_tracks(frame_idx))
@@ -172,13 +179,19 @@ class PassReader:
         self._last_yolo_t = float("-inf")
         self._last_overlays = []
         self._awaiting_read = False
-        return self._close(self._tracker.finish())
+        finished = self._close(self._tracker.finish())
+        return finished + self._drain_fallback()
+
+    def take_late_reads(self) -> list[Track]:
+        """Lượt đọc nền xong trong lúc flush — chưa được báo qua ``first_reads``."""
+        late, self._late_reads = self._late_reads, []
+        return late
 
     def _new_reads(self) -> list[Track]:
         reads = [t for t in self._tracker.active
                  if t.text and t.votes >= self._announce_votes and t.track_id not in self._announced]
         self._announced.update(t.track_id for t in reads)
-        return reads
+        return reads + self.take_late_reads()
 
     def _decode(self, image_bgr: np.ndarray, det: Detection, track: Track | None):
         if self._decoder is None:
@@ -247,6 +260,7 @@ class PassReader:
                 and self._skips.get(track.track_id, 0) < self._recheck_every)
 
     def _close(self, tracks: list[Track]) -> list[Track]:
+        done = []
         for t in tracks:
             if t.text and t.votes < self._announce_votes and t.track_id not in self._announced:
                 logger.info("pass_unconfirmed id=%d text=%s votes=%d", t.track_id, t.text, t.votes)
@@ -255,6 +269,81 @@ class PassReader:
             self._announced.discard(t.track_id)
             if self._decoder is not None:
                 self._decoder.forget(t.track_id)
-            logger.info("pass_finished id=%d text=%s votes=%d observations=%d conflicting=%s",
-                        t.track_id, t.text, t.votes, t.observations, t.conflicting)
-        return tracks
+            if self._send_to_fallback(t):
+                continue
+            self._log_finished(t)
+            done.append(t)
+        return done
+
+    @staticmethod
+    def _log_finished(t: Track):
+        logger.info("pass_finished id=%d text=%s votes=%d observations=%d conflicting=%s",
+                    t.track_id, t.text, t.votes, t.observations, t.conflicting)
+
+    # ── Đọc nền cho lượt PassDecoder không đọc được ───────────────────────────
+
+    def _collect_crops(self, image_bgr, detections, observations, matched, frame_idx: int):
+        if self._fallback is None or self._decoder is None:
+            return
+        active = self._tracker.active
+        for i, det in enumerate(detections):
+            track = matched.get(i) or next((t for t in active if t.first_frame == frame_idx
+                                            and t.center == observations[i].center), None)
+            if track is None:
+                continue
+            if track.votes >= self._min_votes:
+                self._crops.pop(track.track_id, None)
+                continue
+            obs = pass_fallback.make_obs(image_bgr, det, frame_idx, self._clock())
+            if obs is not None:
+                crops = self._crops.setdefault(track.track_id, [])
+                crops.append(obs)
+                if len(crops) > pass_fallback.MAX_CROPS:
+                    del crops[1::2]
+
+    def _send_to_fallback(self, t: Track) -> bool:
+        crops = self._crops.pop(t.track_id, [])
+        if self._fallback is None or self._decoder is None or t.text or len(crops) < pass_fallback.MIN_CROPS:
+            return False
+        index = np.linspace(0, len(crops) - 1, min(pass_fallback.K_FRAMES, len(crops))).astype(int)
+        fps = self._seq_rate or 25.0
+        exposure = self._exposure_ms or 0.0
+        blur = float(np.hypot(*t.velocity)) * fps * exposure / 1000.0
+        ctx = pass_fallback.PassCtx(tuple(float(v) for v in t.velocity), fps, exposure, blur)
+        key = self._fallback.submit([crops[i] for i in index], ctx)
+        if key is None:
+            logger.warning("pass_fallback_skipped id=%d (hàng đợi đầy hoặc bộ giải lỗi)", t.track_id)
+            return False
+        self._held[key] = t
+        return True
+
+    def _poll_fallback(self) -> list[Track]:
+        return self._resolve(self._fallback.poll()) if self._held else []
+
+    def _resolve(self, results) -> list[Track]:
+        done = []
+        for key, text, ms, error in results:
+            t = self._held.pop(key, None)
+            if t is None:
+                continue
+            if error:
+                logger.warning("pass_fallback_error id=%d: %s", t.track_id, error)
+            if text:
+                t.texts[text] = max(self._min_votes, self._announce_votes)
+                self._late_reads.append(t)
+            logger.info("pass_fallback_done id=%d text=%s ms=%.0f", t.track_id, text, ms)
+            self._log_finished(t)
+            done.append(t)
+        return done
+
+    def _drain_fallback(self) -> list[Track]:
+        if not self._held:
+            return []
+        done = self._resolve(self._fallback.wait(pass_fallback.FLUSH_WAIT_S))
+        for t in self._held.values():
+            logger.info("pass_fallback_abandoned id=%d", t.track_id)
+            self._log_finished(t)
+            done.append(t)
+        self._held.clear()
+        self._fallback.discard()
+        return done

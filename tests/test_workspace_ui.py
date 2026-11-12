@@ -80,6 +80,7 @@ class WorkspaceUiTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.settings_path = Path(tmp.name) / "app_settings.json"
         self.window = self.module.MainWindow(settings_path=self.settings_path)
+        self.window.worker._reader.take_late_reads.return_value = []
         self.window.display_timer.stop()
         self.window.fps_timer.stop()
         self.window.close_timer.stop()
