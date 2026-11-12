@@ -10,7 +10,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from demo_ui.keyboard_output import (  # noqa: E402
+from ui.keyboard_output import (  # noqa: E402
     REASON_FOCUS_CHANGED, REASON_MODIFIER, REASON_NO_WINDOW, REASON_OWN_WINDOW, REASON_SEND_FAILED,
     REASON_TYPED, INPUT, KeyboardTyper, sanitize, text_inputs)
 

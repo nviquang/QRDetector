@@ -82,6 +82,7 @@ class AppSettings:
     band_x: int = 0
     band_w: int = 2448
     upload_enabled: bool = True     # gửi mã QR đọc được lên API
+    keyboard_output_enabled: bool = False   # gõ mã vào ô đang chọn của ứng dụng khác
     upload_base_url: str = DEFAULT_BASE_URL
 
     @classmethod
@@ -121,7 +122,6 @@ class BaslerSettings(AppSettings):
     """Mặc định cho camera Basler a2A2840-48umBAS: gain tính bằng dB, sensor 2856×2848."""
     analog_gain: int = 6
     band_w: int = 2840
-    keyboard_output_enabled: bool = False   # gõ mã vào ô đang chọn của ứng dụng khác
 
 
 @dataclass

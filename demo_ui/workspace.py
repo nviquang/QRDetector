@@ -126,7 +126,7 @@ class Workspace(QWidget):
 
         self._flash_timer = QTimer(self)
         self._flash_timer.setSingleShot(True)
-        self._flash_timer.timeout.connect(lambda: self._set_flash(False))
+        self._flash_timer.timeout.connect(self._end_flash)   # method, không lambda: PyQt tự ngắt khi widget bị hủy
         self.set_state(RunState.IDLE)
         self.set_latest(None, "")
         self.set_kpis(0, None, None)
@@ -296,6 +296,9 @@ class Workspace(QWidget):
     def flash_latest(self):
         self._set_flash(True)
         self._flash_timer.start(FLASH_MS)
+
+    def _end_flash(self):
+        self._set_flash(False)
 
     def _set_flash(self, on: bool):
         self.latest_card.setProperty("flash", on)

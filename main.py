@@ -24,6 +24,7 @@ try:
 
     from PyQt5.QtWidgets import QApplication
 
+    from ui.keyboard_output import KeyboardTyper
     from ui.main_window import MainWindow
 except (ImportError, FileNotFoundError, OSError) as e:
     _fail(
@@ -36,6 +37,6 @@ except (ImportError, FileNotFoundError, OSError) as e:
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    window = MainWindow()
+    window = MainWindow(keyboard_typer=KeyboardTyper())
     window.show()
     sys.exit(app.exec_())

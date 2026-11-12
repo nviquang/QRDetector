@@ -19,7 +19,7 @@ sys.path.insert(0, str(ROOT))
 from tests import test_camera_diagnostics as fake  # noqa: E402  (dựng fake mvsdk + import module)
 from tests.test_keyboard_output import FakeBackend as FakeKeyboard  # noqa: E402
 from demo_ui.app_settings import BaslerSettings  # noqa: E402
-from demo_ui.keyboard_output import KeyboardTyper  # noqa: E402
+from ui.keyboard_output import KeyboardTyper  # noqa: E402
 from demo_ui.scan_uploader import ScanUploader  # noqa: E402
 
 

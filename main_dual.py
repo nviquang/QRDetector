@@ -29,6 +29,7 @@ try:
     from demo_ui.app_settings import DUAL_SETTINGS_PATH
     from demo_ui import theme
     from demo_ui.dual_window import DualWindow
+    from ui.keyboard_output import KeyboardTyper
 except (ImportError, FileNotFoundError, OSError) as e:
     _fail(
         "Không khởi tạo được ứng dụng.\n"
@@ -40,6 +41,6 @@ except (ImportError, FileNotFoundError, OSError) as e:
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     theme.apply(app)
-    window = DualWindow(settings_path=DUAL_SETTINGS_PATH)
+    window = DualWindow(settings_path=DUAL_SETTINGS_PATH, keyboard_typer=KeyboardTyper())
     window.show()
     sys.exit(app.exec_())

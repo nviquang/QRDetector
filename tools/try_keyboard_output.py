@@ -12,7 +12,7 @@ import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from demo_ui.keyboard_output import KeyboardTyper  # noqa: E402
+from ui.keyboard_output import KeyboardTyper  # noqa: E402
 
 
 def main():

@@ -29,7 +29,7 @@ try:
 
     from demo_ui.app_settings import BASLER_SETTINGS_PATH, BaslerSettings
     from demo_ui import theme
-    from demo_ui.keyboard_output import KeyboardTyper
+    from ui.keyboard_output import KeyboardTyper
     from demo_ui.main_window import MainWindow
 except (ImportError, FileNotFoundError, OSError) as e:
     _fail(

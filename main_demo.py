@@ -30,6 +30,7 @@ try:
     from demo_ui.app_settings import DEFAULT_SETTINGS_PATH
     from demo_ui import theme
     from demo_ui.main_window import MainWindow
+    from ui.keyboard_output import KeyboardTyper
 except (ImportError, FileNotFoundError, OSError) as e:
     _fail(
         "Không khởi tạo được ứng dụng.\n"
@@ -42,6 +43,6 @@ except (ImportError, FileNotFoundError, OSError) as e:
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     theme.apply(app)
-    window = MainWindow(settings_path=DEFAULT_SETTINGS_PATH)
+    window = MainWindow(settings_path=DEFAULT_SETTINGS_PATH, keyboard_typer=KeyboardTyper())
     window.show()
     sys.exit(app.exec_())

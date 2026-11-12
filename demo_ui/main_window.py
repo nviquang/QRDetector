@@ -29,10 +29,10 @@ from PyQt5.QtWidgets import (QCheckBox, QDoubleSpinBox, QGroupBox, QHBoxLayout, 
 
 from ui import main_window_ui as MainWindowUI
 from ui.main_window import DecodeWorker as BaseDecodeWorker
+from ui.keyboard_output import KeyboardTyper
 from ui.main_window import draw_overlays, frame_to_qimage
 
 from .app_settings import AppSettings
-from .keyboard_output import KeyboardTyper
 from .run_controller import RunController, RunState, StartRequest
 from .scan_uploader import ScanUploader
 from .session_stats import SessionStats, age_text
@@ -134,8 +134,8 @@ class MainWindow(QMainWindow):
         uploader: None + có settings_path → tạo ScanUploader thật; test truyền bản giả.
         camera: backend cùng API CameraManager mà demo dùng; None = MindVision.
         settings_cls: lớp cấu hình, quyết định giá trị mặc định theo camera.
-        keyboard_typer: có thì hiện ô bật gõ mã vào ô đang chọn; settings_cls phải có
-            keyboard_output_enabled (BaslerSettings). None = không có tính năng này.
+        keyboard_typer: có thì hiện ô bật gõ mã vào ô đang chọn (lưu keyboard_output_enabled).
+            None = không có tính năng này (dùng trong test).
         """
         super().__init__()
 
