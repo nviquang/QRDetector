@@ -1,5 +1,7 @@
 # Plan: làm tốt decode QR trong phòng thí nghiệm (băng chuyền 1 m)
 
+> **Tài liệu lịch sử:** ghi theo cấu hình tại thời điểm viết (camera MindVision 2448 × 2048, tem 25 mm, khoảng 0,43 mm/px). Thông số hiện tại: `README.md`, mục Thông số hiện trường và tem.
+
 Ngày: 2026-10-26 · Phạm vi: **chỉ phase phòng thí nghiệm**. Bài toán thực tế (3.2 m, 2 camera × 1.6 m) để sau, khi lab đạt nghiệm thu.
 
 Cố định: camera MindVision 5MP 2448×2048, chỉnh qua MVSDK (`solution/camera/camera_manager.py`). QR 25×25 mm, nội dung 12 chữ số (`000000585545`, `…546`, `…623`) → QR version 1 (21×21 ô). Băng chạy theo chiều ngang khung hình, tốc độ 10 / 20 / 30 cm/s.

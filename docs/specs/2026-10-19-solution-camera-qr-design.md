@@ -1,5 +1,7 @@
 # Spec: solution/ — Tích hợp Camera SDK + QR Pipeline
 
+> **Tài liệu lịch sử:** ghi theo cấu hình tại thời điểm viết (camera MindVision 2448 × 2048, tem 25 mm, khoảng 0,43 mm/px). Thông số hiện tại: `README.md`, mục Thông số hiện trường và tem.
+
 **Ngày:** 2026-10-19
 **Trạng thái:** Design đã duyệt (3 phần: kiến trúc, ImprovePipeline, camera/UI)
 

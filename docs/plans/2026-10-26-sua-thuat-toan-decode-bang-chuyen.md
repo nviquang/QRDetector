@@ -1,5 +1,7 @@
 # Plan cải thiện decode QR trên băng chuyền
 
+> **Tài liệu lịch sử:** ghi theo cấu hình tại thời điểm viết (camera MindVision 2448 × 2048, tem 25 mm, khoảng 0,43 mm/px). Thông số hiện tại: `README.md`, mục Thông số hiện trường và tem.
+
 Ngày: 2026-10-26 · Thay thế bản nháp trước. Nghiên cứu gốc: [2026-10-24-qr-decode-bang-chuyen.md](2026-10-24-qr-decode-bang-chuyen.md)
 
 ## 0. Tóm tắt

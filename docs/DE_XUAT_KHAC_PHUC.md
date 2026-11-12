@@ -1,5 +1,7 @@
 # Đề xuất khắc phục — QR trên băng chuyền (`solution/`)
 
+> **Tài liệu lịch sử:** ghi theo cấu hình tại thời điểm viết (camera MindVision 2448 × 2048, tem 25 mm, khoảng 0,43 mm/px). Thông số hiện tại: `README.md`, mục Thông số hiện trường và tem.
+
 Ngày: 31/10/2026 · Căn cứ: `logs/camera.log` (phiên 20/10 và 27/10), kết quả test ngày 31/10, code tại commit `510e294`.
 
 Mục tiêu: **tỷ lệ đọc đúng mỗi QR đi qua camera** (read rate theo lượt) ở tốc độ băng 10–30 cm/s.

@@ -1,5 +1,7 @@
 # Plan cải thiện decode QR trên video băng chuyền
 
+> **Tài liệu lịch sử:** ghi theo cấu hình tại thời điểm viết (camera MindVision 2448 × 2048, tem 25 mm, khoảng 0,43 mm/px). Thông số hiện tại: `README.md`, mục Thông số hiện trường và tem.
+
 Ngày: 2026-10-24 · Phạm vi: `offline/qr/` (ImprovePipeline) và cấu hình camera MindVision trong `solution/`
 
 ## 1. Hiện trạng đo được

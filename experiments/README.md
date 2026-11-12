@@ -1,5 +1,7 @@
 # Thử nghiệm tăng tỉ lệ đọc QR
 
+> **Phạm vi:** số liệu trong file này đo ở phòng thí nghiệm cũ (camera MindVision, tem 25 mm, exposure 12,9 ms). Cấu hình hiện trường (Basler, tem 36 mm, exposure 3 ms) và so sánh các hướng thuật toán mới: `README.md` mục Thông số hiện trường và tem, `reports/So sánh chất lượng các hướng đọc QR.md`.
+
 Cấu hình tốt nhất đã được tích hợp vào `qr/` (xem `qr/multiframe.py`) nhưng **chưa được kiểm chứng trên băng chuyền thật**. Quay về bản cũ: `ImprovePipeline(multi_frame=False)`.
 
 **Sau khi có các số dưới đây, cấu hình đã đổi và chưa đo lại đầy đủ:** tem không có định dạng cố định nên đã bỏ bộ lọc mã (H1) và phần loại theo kích thước của H2. Bảng dưới vẫn là số của bản có lọc 12 chữ số. Bỏ lọc làm tăng nguy cơ đọc sai; bài đo báo mã sau 1 hay 2 phiếu (`run_semi_prod.sh`, `PROD1`, `PROD2`) chưa chạy xong.

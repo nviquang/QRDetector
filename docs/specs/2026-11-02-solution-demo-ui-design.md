@@ -1,5 +1,7 @@
 # Thiết kế UI demo cho `solution/`
 
+> **Tài liệu lịch sử:** ghi theo cấu hình tại thời điểm viết (camera MindVision 2448 × 2048, tem 25 mm, khoảng 0,43 mm/px). Thông số hiện tại: `README.md`, mục Thông số hiện trường và tem.
+
 Ngày: 2026-11-02
 
 > **Cập nhật:** đây là **phiên bản riêng** (`solution/main_demo.py`, gói `solution/demo_ui/`), không thay app test camera (`main.py`, `ui/`). Các file ghi `ui/...` ở dưới nằm trong `demo_ui/`, `app_settings.py` cũng vậy; `ui/main_window.py` và `main_window_ui.py` không sửa, chỉ được dùng lại.

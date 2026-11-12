@@ -1,5 +1,7 @@
 # Tăng tốc decode QR bằng GPU + vẽ quad đúng — Implementation Plan
 
+> **Tài liệu lịch sử:** ghi theo cấu hình tại thời điểm viết (camera MindVision 2448 × 2048, tem 25 mm, khoảng 0,43 mm/px). Thông số hiện tại: `README.md`, mục Thông số hiện trường và tem.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Chạy detect YOLO trên GPU NVIDIA của máy, không decode lại những QR đã đọc chắc, đếm kết quả theo lượt QR đi qua băng, và vẽ khung quad bám đúng QR trên màn hình kể cả khi băng đang chạy.

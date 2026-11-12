@@ -1,10 +1,40 @@
 # QRDetector — Ứng dụng quét QR bằng camera MindVision
 
-Ứng dụng PyQt5 tích hợp **camera MindVision (MVSDK / `mvsdk`)** và **pipeline QR** (qrdet detect ở imgsz 1280 → chuỗi decode trên vùng QR cắt từ ảnh gốc: zxing → WeChat → WeChat CNN + super-resolution). Tối ưu cho QR nhỏ (~60px) trên frame 2448×2048; khoảng 1s/frame trên CPU. Không dùng Real-ESRGAN.
+Ứng dụng PyQt5 tích hợp **camera MindVision (MVSDK / `mvsdk`)** và **pipeline QR** (qrdet detect ở imgsz 1280 → chuỗi decode trên vùng QR cắt từ ảnh gốc: zxing → WeChat → WeChat CNN + super-resolution). Tối ưu cho QR rất nhỏ (khoảng 2–2,6 px mỗi ô); khoảng 1s/frame trên CPU. Không dùng Real-ESRGAN. Có thêm bản demo cho camera Basler (`main_basler.py`), là cấu hình dùng ở hiện trường.
 
 ```
 Camera (MindVision Camera* API) → frame BGR độc lập → mỗi N frame → ImprovePipeline → quad + text QR
 ```
+
+## Thông số hiện trường và tem
+
+Đây là bộ thông số chuẩn; các tài liệu khác dẫn tới mục này. Số liệu trong `docs/plans/`, `docs/specs/` và `docs/DE_XUAT_KHAC_PHUC.md` thuộc phòng thí nghiệm cũ (camera MindVision 2448 × 2048, tem 25 mm, khoảng 0,43 mm/px), chỉ để tham khảo lịch sử.
+
+| Hạng mục | Giá trị |
+|---|---|
+| Tem | 36 × 36 mm (phần đen), không tăng được |
+| Nội dung | 12 chữ số + `#` + 12 chữ số, ví dụ `111111111111#111111111111` (25 ký tự) |
+| Quy cách mã khi in | **QR version 1 (21 × 21 ô), mức sửa lỗi M**, mã hóa tách đoạn: số, `#` ở chế độ byte, số (đúng 128 bit). Phải ép version 1 và cách tách đoạn: phần mềm in thông thường mã hóa cả chuỗi ở chế độ byte (212 bit) nên tự đẩy lên version 2–4, ô nhỏ hơn và khó đọc hơn |
+| Camera | Basler a2A2840-48umBAS, 2856 × 2848 px, điểm ảnh 2,74 µm |
+| Ống kính, độ cao | 4 mm, f/4, camera cao 1 m vuông góc mặt băng |
+| Vùng đọc | 1,6 × 0,6 m (cạnh 1,6 m theo chiều ngang ảnh, băng chạy theo chiều 0,6 m) |
+| Độ phân giải đo được | 0,673 mm/px → tem 36 mm rộng khoảng 54 px: version 1 khoảng 2,57 px/ô (version 2: 2,16; version 3: 1,86) |
+| Băng chuyền | 100 mm/s |
+| Exposure, gain khuyến nghị | 3 ms (vệt mờ khoảng 0,2 ô), gain 6 dB; nền trắng tem nên ở 170–225/255, thiếu sáng thì tăng đèn trước rồi mới tăng gain (tối đa khoảng 18 dB) |
+| Máy xử lý | Máy hiện trường chỉ có CPU; GPU chỉ có ở máy phát triển |
+
+Tạo mã đúng quy cách bằng `segno`:
+
+```python
+import segno
+from segno import consts
+
+qr = segno.make([("111111111111", consts.MODE_NUMERIC), ("#", consts.MODE_BYTE), ("111111111111", consts.MODE_NUMERIC)],
+                version=1, error="m", boost_error=False, micro=False)
+qr.save("tem.png", scale=10, border=4)
+```
+
+Tem đang có ở phòng thí nghiệm được in theo cách mặc định nên lẫn version 1–3, mức L/M/Q/H. Kết quả đo theo từng loại tem và các hướng thuật toán: `reports/So sánh chất lượng các hướng đọc QR.md`.
 
 ---
 
@@ -106,7 +136,9 @@ Cùng giao diện với bản demo bên dưới, dùng camera Basler (viết cho
 python main_basler.py
 ```
 
-Cấu hình lưu riêng ở `config/basler_settings.json`; gain tính bằng dB (mặc định 6 dB), exposure mặc định 12,9 ms. Kiểm tra nhanh camera: `python tools/test_basler.py --list`.
+Cấu hình lưu riêng ở `config/basler_settings.json`; gain tính bằng dB (mặc định 6 dB). Exposure mặc định trong code vẫn là 12,9 ms (thừa kế từ bản MindVision); ở 100 mm/s nên đặt **3 ms** trong tab Băng chuyền (xem mục Thông số hiện trường và tem). Kiểm tra nhanh camera: `python tools/test_basler.py --list`.
+
+**Đọc nền cho QR khó:** lượt mà bộ đọc thường không đọc được được gửi sang một tiến trình riêng chạy bộ giải trong `qr/solvers` (tái tạo trên lưới ô `grid_sr`, rồi `preproc_sweep`). Lượt đó báo mã trễ khoảng 10–20 giây sau khi tem ra khỏi khung; lượt đọc được bình thường không bị trễ. Muốn chạy pipeline cũ để đối chiếu: đặt biến môi trường `QR_FALLBACK=off` trước khi chạy (PowerShell: `$env:QR_FALLBACK="off"`).
 
 ## Phiên bản demo cho khách hàng
 
