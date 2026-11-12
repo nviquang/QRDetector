@@ -23,7 +23,7 @@ from qr import ImprovePipeline
 
 from PyQt5.QtCore import QTimer, pyqtSignal
 from PyQt5.QtGui import QKeySequence, QPixmap
-from PyQt5.QtWidgets import (QCheckBox, QDoubleSpinBox, QGroupBox, QHBoxLayout, QLabel,
+from PyQt5.QtWidgets import (QApplication, QCheckBox, QDoubleSpinBox, QGroupBox, QHBoxLayout, QLabel,
                              QMainWindow, QMenu, QMessageBox, QPushButton,
                              QShortcut, QSpinBox, QVBoxLayout)
 
@@ -37,6 +37,7 @@ from .run_controller import RunController, RunState, StartRequest
 from .scan_uploader import ScanUploader
 from .session_stats import SessionStats, age_text
 from .settings_window import TAB_CONNECTION, TAB_TITLES, SettingsWindow
+from .tray import TrayController
 from .workspace import Workspace
 
 
@@ -128,7 +129,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self, settings_path: Path | None = None, uploader: ScanUploader | None = None,
                  camera=None, settings_cls: type[AppSettings] = AppSettings,
-                 keyboard_typer: KeyboardTyper | None = None):
+                 keyboard_typer: KeyboardTyper | None = None, tray: TrayController | bool = False):
         """settings_path: file JSON lưu cấu hình; None = không đọc/ghi file (dùng trong test).
 
         uploader: None + có settings_path → tạo ScanUploader thật; test truyền bản giả.
@@ -136,8 +137,12 @@ class MainWindow(QMainWindow):
         settings_cls: lớp cấu hình, quyết định giá trị mặc định theo camera.
         keyboard_typer: có thì hiện ô bật gõ mã vào ô đang chọn (lưu keyboard_output_enabled).
             None = không có tính năng này (dùng trong test).
+        tray: True = nút Chạy nền + icon khay hệ thống (máy không có khay thì bỏ qua);
+            False = không có (dùng trong test); test truyền bản giả có cùng API TrayController.
         """
         super().__init__()
+        self._tray_option = tray
+        self.tray: TrayController | None = None
 
         # Thành viên
         self._settings_path = settings_path
@@ -226,12 +231,22 @@ class MainWindow(QMainWindow):
         ui.btn_camera_list_flush.setText("⟳")
         ui.btn_camera_list_flush.setToolTip("Quét lại danh sách camera")
         self.settings_window = SettingsWindow(self, ui.frame_camera_list, self.qr_group, ui.status_bar)
+        if self._tray_option is True:
+            self.tray = TrayController(self) if TrayController.available() else None
+        elif self._tray_option:
+            self.tray = self._tray_option
         menu = QMenu(self)
         for index, title in enumerate(TAB_TITLES):
             menu.addAction(title + "…", lambda _=False, i=index: self.settings_window.open_tab(i))
         menu.addSeparator()
+        if self.tray is not None:
+            menu.addAction("Chạy nền", self.on_background)
         menu.addAction("Thoát", self.close)
         self.workspace = Workspace(ui.label_image, menu, self)
+        if self.tray is not None:
+            self.workspace.set_background_available(True)
+            self.workspace.background_clicked.connect(self.on_background)
+            QShortcut(QKeySequence("Ctrl+H"), self, activated=self.on_background)
         self.setCentralWidget(self.workspace)     # central widget cũ không còn widget con
         self.setWindowTitle("QR Conveyor Reader")
         self.setMaximumSize(16777215, 16777215)   # setupUi khóa kích thước theo form cũ
@@ -240,6 +255,11 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+,"), self, activated=self.settings_window.open_tab)
         QShortcut(QKeySequence("F11"), self, activated=self.on_toggle_fullscreen)
         QShortcut(QKeySequence("Esc"), self, activated=self.showNormal)
+
+    def on_background(self):
+        """Ẩn xuống khay hệ thống; capture, decode, gửi server, gõ phím vẫn chạy."""
+        if self.tray is not None:
+            self.tray.hide_window()
 
     def on_toggle_fullscreen(self):
         if self.isFullScreen():
@@ -371,6 +391,8 @@ class MainWindow(QMainWindow):
 
     def _on_run_state(self, state: RunState, message: str):
         self.workspace.set_state(state, message)
+        if self.tray is not None:
+            self.tray.set_state(state, message)
         if state is RunState.RUNNING:
             self._decoding = True
             self._last_frame_at = time.monotonic()
@@ -407,6 +429,8 @@ class MainWindow(QMainWindow):
     def _refresh_results(self):
         self._render_latest_qr()
         self.workspace.set_kpis(self.stats.read_count, self.stats.read_rate, self.stats.per_minute())
+        if self.tray is not None:
+            self.tray.set_read_count(self.stats.read_count)
         self.workspace.set_elapsed(self.stats.elapsed())
 
     # ── Panel băng chuyền (tab trong cửa sổ Cấu hình) ─────────────────────────
@@ -600,7 +624,13 @@ class MainWindow(QMainWindow):
             self.uploader.stop()
         if self.keyboard_typer is not None:
             self.keyboard_typer.stop()
+        self.settings_window.close()
         event.accept()
+        if self.tray is not None:
+            self.tray.hide()             # icon không kẹt lại ở khay
+        app = QApplication.instance()
+        if app is not None and not app.quitOnLastWindowClosed():
+            app.quit()                   # entry tắt tự thoát để đóng cửa sổ Cấu hình lúc chạy nền không thoát app
 
     # ── Camera list / open / close ────────────────────────────────────────────
 
@@ -683,6 +713,9 @@ class MainWindow(QMainWindow):
             self._last_frame = frame
             self._last_frame_at = time.monotonic()
 
+        if not self.isVisible():
+            return                       # chạy nền: vẫn gửi decode ở trên, bỏ phần vẽ cho đỡ CPU
+
         label_w, label_h = self.ui.label_image.width(), self.ui.label_image.height()
         vis = frame
         if self.cbx_quad.isChecked() and self._overlays:
@@ -696,7 +729,10 @@ class MainWindow(QMainWindow):
         self._refresh_results()    # cập nhật "… giây trước", tốc độ, thời gian chạy
         state = self.controller.state
         if state is RunState.RUNNING:
-            self.workspace.set_signal_lost(time.monotonic() - self._last_frame_at > SIGNAL_LOST_S)
+            lost = time.monotonic() - self._last_frame_at > SIGNAL_LOST_S
+            self.workspace.set_signal_lost(lost)
+            if self.tray is not None:
+                self.tray.set_signal_lost(lost)
         # Đang kết nối/đóng: thread nền đang dùng SDK, GUI không gọi getter
         if self.mgr.handle and state is not RunState.CONNECTING and self._camera_close_thread is None:
             capture, _ = self.mgr.frame_statistic()

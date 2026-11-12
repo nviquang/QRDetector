@@ -124,6 +124,7 @@ python main_demo.py
 - **Đã đọc / Tỉ lệ đọc / Mã/phút** chỉ tính trên lượt đã kết thúc. Lượt không đọc được và chỉ có 1 detection coi là nhận nhầm: không hiện, không tính vào tỉ lệ, vẫn có trong log `pass_finished`. Vì vậy tỉ lệ này có thể khác nhãn "Lượt QR" của app test camera.
 - Không có frame mới quá 3 giây khi đang chạy → hiện "Mất tín hiệu camera". Không tự kết nối lại.
 - **F11** bật/tắt toàn màn hình, **Esc** thoát toàn màn hình.
+- **Chạy nền** (cạnh nút ⚙, hoặc `Ctrl+H`, có ở `main_demo.py` và `main_basler.py`) — ẩn cửa sổ xuống khay hệ thống (vùng ^ cạnh đồng hồ); camera, decode, gửi server và gõ mã vẫn chạy. Màu icon theo trạng thái (xanh: đang chạy, vàng: đang kết nối/dừng, đỏ: lỗi), di chuột lên icon xem số mã đã đọc. Bấm icon để mở lại; chuột phải có **Bắt đầu/Dừng** và **Thoát**. Lỗi camera hoặc mất tín hiệu lúc chạy nền sẽ hiện thông báo của Windows. Nút X vẫn thoát app như cũ. Chưa chặn mở app lần thứ hai: icon đang ở khay nghĩa là app vẫn giữ camera.
 
 **Cấu hình** (nút ⚙ hoặc `Ctrl+,`): cửa sổ riêng, không chặn màn hình chính, đóng lại không làm dừng hệ thống.
 

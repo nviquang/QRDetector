@@ -42,7 +42,8 @@ except (ImportError, FileNotFoundError, OSError) as e:
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    app.setQuitOnLastWindowClosed(False)   # chạy nền: MainWindow tự quit khi đóng hẳn
     theme.apply(app)
-    window = MainWindow(settings_path=DEFAULT_SETTINGS_PATH, keyboard_typer=KeyboardTyper())
+    window = MainWindow(settings_path=DEFAULT_SETTINGS_PATH, keyboard_typer=KeyboardTyper(), tray=True)
     window.show()
     sys.exit(app.exec_())

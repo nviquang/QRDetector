@@ -45,9 +45,10 @@ if __name__ == "__main__":
     from qr.solvers import LABEL
     fallback = pass_fallback.enable()
     app = QApplication(sys.argv)
+    app.setQuitOnLastWindowClosed(False)   # chạy nền: MainWindow tự quit khi đóng hẳn
     theme.apply(app)
     window = MainWindow(settings_path=BASLER_SETTINGS_PATH, camera=BaslerCameraManager(),
-                        settings_cls=BaslerSettings, keyboard_typer=KeyboardTyper())
+                        settings_cls=BaslerSettings, keyboard_typer=KeyboardTyper(), tray=True)
     window.setWindowTitle("QR Conveyor Reader — Basler — " + (LABEL if fallback else "không đọc nền"))
     window.spin_gain.setSuffix(" dB")
     window.show()

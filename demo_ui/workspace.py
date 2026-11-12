@@ -101,6 +101,7 @@ class VideoPanel(QFrame):
 class Workspace(QWidget):
     primary_clicked = pyqtSignal()
     reset_clicked = pyqtSignal()
+    background_clicked = pyqtSignal()
 
     def __init__(self, video_label: QLabel, menu: QMenu, parent=None):
         super().__init__(parent)
@@ -152,12 +153,18 @@ class Workspace(QWidget):
         self.btn_reset = QPushButton("Reset phiên", bar)
         self.btn_reset.setObjectName("headerButton")
         self.btn_reset.clicked.connect(self.reset_clicked)
+        self.btn_background = QPushButton("⤓  Chạy nền", bar)
+        self.btn_background.setObjectName("headerButton")
+        self.btn_background.setToolTip("Ẩn xuống khay hệ thống, vẫn tiếp tục đọc mã")
+        self.btn_background.clicked.connect(self.background_clicked)
+        self.btn_background.hide()          # chỉ hiện khi MainWindow có khay hệ thống
         self.btn_menu = QToolButton(bar)
         self.btn_menu.setObjectName("headerButton")
         self.btn_menu.setText("⚙  Cấu hình")
         self.btn_menu.setPopupMode(QToolButton.InstantPopup)
         self.btn_menu.setMenu(menu)
         row.addWidget(self.btn_reset)
+        row.addWidget(self.btn_background)
         row.addWidget(self.btn_menu)
         return bar
 
@@ -267,6 +274,9 @@ class Workspace(QWidget):
             self.video.show_message(self._state_message, error=True)
         else:
             self.video.hide_message()
+
+    def set_background_available(self, available: bool):
+        self.btn_background.setVisible(available)
 
     def set_signal_lost(self, lost: bool):
         if lost != self._signal_lost:
