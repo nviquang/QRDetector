@@ -1,0 +1,22 @@
+{
+  "exposure_ms": 3.0,
+  "analog_gain": 12.0,
+  "band_enabled": true,
+  "band_y": 984,
+  "band_h": 880,
+  "band_x_enabled": true,
+  "band_x": 256,
+  "band_w": 2336,
+  "setup": {
+    "camera": "Basler a2A2840-48umBAS (IMX546, 2856x2848, 2.74 um)",
+    "lens_mm": 4,
+    "aperture": "f/4",
+    "height_mm": 1000,
+    "field_mm": [1600, 600],
+    "conveyor_mm_s": 100,
+    "qr_mm": 36,
+    "qr_version": 1,
+    "qr_ec": "L",
+    "fps": 30
+  }
+}
