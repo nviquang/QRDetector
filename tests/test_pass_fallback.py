@@ -1,6 +1,7 @@
 """PassReader giữ lượt chưa đọc được cho bộ đọc nền, báo một lần khi có kết quả; ranh giới tiến trình dùng bộ giải giả."""
 import os
 import tempfile
+import time
 import unittest
 
 import numpy as np
@@ -35,6 +36,7 @@ class FakeFallback:
     def __init__(self, full=False):
         self.jobs, self.results, self.full, self.discarded = [], [], full, 0
         self.pending_keys = set()
+        self.stages = {}
 
     def submit(self, obs, ctx):
         if self.full:
@@ -56,6 +58,17 @@ class FakeFallback:
 
     def finish(self, key, text):
         self.results.append((key, text, 12.0, None))
+        self.stages.pop(key, None)
+        self.revision += 1
+
+    revision = 0
+
+    def stage(self, key):
+        return self.stages.get(key)
+
+    def start(self, key, stage, since=50.0):
+        self.stages[key] = (stage, since)
+        self.revision += 1
 
 
 class Harness:
@@ -126,7 +139,36 @@ class ReaderHoldTest(unittest.TestCase):
 
     def test_without_fallback_pass_finishes_immediately(self):
         h = Harness(None)
-        self.assertEqual(len(h.run_pass().finished), 1)
+        result = h.run_pass()
+        self.assertEqual(len(result.finished), 1)
+        self.assertIsNone(result.fallback)
+
+    def test_status_reports_queue_then_stages_only_when_changed(self):
+        fallback = FakeFallback()
+        h = Harness(fallback)
+        h.run_pass()
+        closing = h.run_pass()
+        self.assertEqual([(s.stage, s.position) for s in closing.fallback], [("queued", 1), ("queued", 2)])
+        held_ids = [s.track_id for s in closing.fallback]
+        self.assertIsNone(h.step([]).fallback)            # không đổi: không báo lại
+        fallback.start(0, "B")
+        (b, q) = h.step([]).fallback
+        self.assertEqual((b.track_id, b.stage, b.since, b.position), (held_ids[0], "B", 50.0, 0))
+        self.assertEqual((q.stage, q.position), ("queued", 1))
+        fallback.start(0, "C")
+        self.assertEqual(h.step([]).fallback[0].stage, "C")
+        fallback.finish(0, None)
+        result = h.step([])
+        self.assertEqual([s.track_id for s in result.fallback], held_ids[1:])
+        self.assertEqual(len(result.finished), 1)
+
+    def test_flush_resets_status_baseline(self):
+        fallback = FakeFallback()
+        h = Harness(fallback)
+        self.assertEqual(len(h.run_pass().fallback), 1)
+        h.reader.flush()
+        self.assertIsNone(h.step([]).fallback)            # người gọi flush tự xóa trạng thái
+        self.assertEqual(h.reader.fallback_status(), [])
 
     def test_short_pass_is_not_sent(self):
         fallback = FakeFallback()
@@ -141,6 +183,20 @@ class Fake:
         if obs[0].frame == 99:
             raise ValueError("hỏng")
         return "n={}:v={}".format(len(obs), ctx.velocity[1])
+"""
+
+
+PROGRESS_SOURCE = """
+import time
+
+
+class Staged:
+    def read_pass(self, obs, ctx, progress=None):
+        progress("B")
+        time.sleep(0.3)
+        progress("C")
+        time.sleep(0.5)
+        return "ok"
 """
 
 
@@ -162,6 +218,31 @@ class ProcessBoundaryTest(unittest.TestCase):
                 self.assertEqual(done[good], ("n=2:v=7.0", None))
                 self.assertIsNone(done[bad][0])
                 self.assertIn("hỏng", done[bad][1])
+            finally:
+                fallback.close()
+
+    def test_solver_progress_reaches_parent(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "progress_solver.py")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(PROGRESS_SOURCE)
+            fallback = PassFallback(path + ":Staged")
+            try:
+                crop = np.zeros((10, 10), np.uint8)
+                obs = PassObs(crop, np.zeros(4), np.zeros((4, 2)), None, 0.9, np.zeros(2), 1, 0.0)
+                key = fallback.submit([obs], PassCtx((0.0, 1.0), 25.0, 3.0, 0.5))
+                seen = []
+                done = []
+                deadline = time.monotonic() + 120.0
+                while not done and time.monotonic() < deadline:
+                    done = fallback.poll()
+                    stage = fallback.stage(key)
+                    if stage and (not seen or seen[-1] != stage[0]):
+                        seen.append(stage[0])
+                    time.sleep(0.01)
+                self.assertEqual(done[0][1], "ok")
+                self.assertEqual(seen[-1:], ["C"])           # B có thể qua nhanh giữa hai lần poll
+                self.assertIsNone(fallback.stage(key))
             finally:
                 fallback.close()
 

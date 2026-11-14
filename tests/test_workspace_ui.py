@@ -218,6 +218,27 @@ class WorkspaceUiTests(unittest.TestCase):
         self.assertEqual(workspace.kpi_read.text(), "1")
         self.assertEqual(workspace.kpi_rate.text(), "100,0%")
 
+    def test_fallback_row_and_footer_follow_solver_until_pass_finishes(self):
+        workspace = self.window.workspace
+        now = time.monotonic()
+        status = types.SimpleNamespace(track_id=4, stage="queued", since=now, position=1)
+        self.window.on_fallback_status([status])
+        self.assertEqual(workspace.table.rowCount(), 1)
+        self.assertIn("chờ đọc lại", workspace.table.item(0, 1).text())
+        self.assertEqual(workspace.table.item(0, 2).text(), "⏳")
+        self.assertFalse(workspace.lbl_fallback.isHidden())
+        self.assertIn("1 lượt", workspace.lbl_fallback.text())
+        self.window.on_fallback_status([types.SimpleNamespace(track_id=4, stage="C", since=now, position=0)])
+        self.assertIn("C", workspace.table.item(0, 1).text())
+        self.assertIn("đang chạy C", workspace.lbl_fallback.text())
+        self.assertEqual(workspace.kpi_read.text(), "0")
+        self.window.on_reads_done([track(4, "LATE")])
+        self.window.on_passes_done([track(4, "LATE")])
+        self.window.on_fallback_status([])
+        self.assertEqual(workspace.table.rowCount(), 1)
+        self.assertEqual((workspace.table.item(0, 1).text(), workspace.table.item(0, 2).text()), ("LATE", "✓"))
+        self.assertTrue(workspace.lbl_fallback.isHidden())
+
     def test_failed_and_conflicting_rows_and_noise(self):
         workspace = self.window.workspace
         self.window.on_passes_done([track(1, None), track(2, "B", conflicting=True),

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import atexit
 import importlib.util
+import inspect
 import logging
 import multiprocessing as mp
 import os
@@ -28,6 +29,7 @@ MAX_BACKLOG = 8        # số lượt chờ tối đa; đầy thì lượt mới
 FLUSH_WAIT_S = 5.0     # Dừng/Reset chờ kết quả tối đa chừng này
 MIN_CROPS = 2
 MAX_CROPS = 64
+STAGE_SOLVING = "giải"  # giai đoạn chung khi bộ giải không báo tiến độ (ComboBC báo "B" rồi "C")
 _EDGE_PX = 3
 _SOLVERS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "solvers")
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -79,6 +81,13 @@ def _load_solver(spec: str):
     return getattr(module, cls)()
 
 
+def _accepts_progress(solver) -> bool:
+    try:
+        return "progress" in inspect.signature(solver.read_pass).parameters
+    except (TypeError, ValueError):
+        return False
+
+
 def _worker(spec: str, jobs, results):
     import cv2
     os.environ["QR_MAIN"] = _ROOT      # bộ giải dùng qr/ của chính thư mục này
@@ -89,6 +98,7 @@ def _worker(spec: str, jobs, results):
         results.put(("fatal", repr(e)))
         return
     results.put(("ready", None))
+    reports_progress = _accepts_progress(solver)
     parent = mp.parent_process()
     while True:
         try:
@@ -102,7 +112,12 @@ def _worker(spec: str, jobs, results):
         key, obs, ctx = job
         t0 = time.perf_counter()
         try:
-            text, error = solver.read_pass(obs, ctx), None
+            if reports_progress:
+                text = solver.read_pass(obs, ctx, progress=lambda stage, k=key: results.put(("progress", (k, stage))))
+            else:
+                results.put(("progress", (key, STAGE_SOLVING)))
+                text = solver.read_pass(obs, ctx)
+            error = None
         except Exception as e:         # lỗi ở một lượt không được làm chết tiến trình đọc nền
             text, error = None, repr(e)
         results.put((key, (text, (time.perf_counter() - t0) * 1000.0, error)))
@@ -117,6 +132,8 @@ class PassFallback:
         self._jobs.cancel_join_thread()
         self._results.cancel_join_thread()
         self._pending: set[int] = set()
+        self._stage: dict[int, tuple[str, float]] = {}   # khóa → (giai đoạn, monotonic lúc bắt đầu)
+        self.revision = 0                                # tăng mỗi khi giai đoạn của một việc đổi
         self._next_key = 0
         self._failed = False
         self._process = context.Process(target=_worker, args=(spec, self._jobs, self._results), daemon=True,
@@ -127,6 +144,15 @@ class PassFallback:
     @property
     def pending(self) -> int:
         return len(self._pending)
+
+    def stage(self, key: int) -> tuple[str, float] | None:
+        """(giai đoạn, monotonic lúc vào giai đoạn) của việc đang giải; None nếu còn chờ trong hàng đợi."""
+        return self._stage.get(key)
+
+    def _forget(self, key: int):
+        self._pending.discard(key)
+        if self._stage.pop(key, None) is not None:
+            self.revision += 1
 
     def submit(self, obs: list[PassObs], ctx: PassCtx) -> int | None:
         """Trả khóa của việc, hoặc None nếu hàng đợi đầy / tiến trình đã lỗi."""
@@ -150,14 +176,25 @@ class PassFallback:
             elif key == "fatal":
                 logger.error("pass_fallback không nạp được bộ giải %s: %s", self.spec, value)
                 self._failed = True
+            elif key == "progress":
+                job, stage = value
+                if job in self._pending:
+                    self._stage[job] = (stage, time.monotonic())
+                    self.revision += 1
             elif key in self._pending:
-                self._pending.discard(key)
+                self._forget(key)
                 done.append((key, *value))
         if self._pending and (self._failed or not self._process.is_alive()):
             done += [(key, None, 0.0, "tiến trình đọc nền đã dừng") for key in self._pending]
             self._pending.clear()
+            self._clear_stages()
             self._failed = True
         return done
+
+    def _clear_stages(self):
+        if self._stage:
+            self._stage.clear()
+            self.revision += 1
 
     def wait(self, timeout: float) -> list[tuple[int, str | None, float, str | None]]:
         """Chờ hết việc tối đa ``timeout`` giây, trả các việc xong trong lúc chờ."""
@@ -171,6 +208,7 @@ class PassFallback:
     def discard(self):
         """Bỏ việc đang chờ: kết quả về muộn sẽ bị bỏ qua."""
         self._pending.clear()
+        self._clear_stages()
         try:
             while True:
                 self._jobs.get_nowait()

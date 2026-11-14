@@ -18,11 +18,15 @@ def _load(relative: str, cls: str):
 
 
 class ComboBC:
+    STAGES = ("B", "C")    # song song self.parts, báo qua ``progress`` để giao diện hiện giai đoạn đang chạy
+
     def __init__(self):
         self.parts = [_load("grid_sr/grid_sr.py", "GridSR"), _load("preproc_sweep/preproc_sweep.py", "PreprocSweep")]
 
-    def read_pass(self, obs, ctx):
-        for part in self.parts:
+    def read_pass(self, obs, ctx, progress=None):
+        for stage, part in zip(self.STAGES, self.parts):
+            if progress is not None:
+                progress(stage)
             text = part.read_pass(obs, ctx)
             if text:
                 return text

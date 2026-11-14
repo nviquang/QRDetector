@@ -58,6 +58,7 @@ class DecodeWorker(BaseDecodeWorker):
     reads = pyqtSignal(list)        # list[Track] — lượt vừa có nội dung lần đầu
     flushed = pyqtSignal(str, list) # (mục đích, list[Track] còn mở) — sau mọi kết quả trước đó
     ready = pyqtSignal()            # warm-up xong (kể cả lỗi — decode vẫn chạy được, chỉ chậm lần đầu)
+    fallback = pyqtSignal(list)     # list[FallbackStatus] — lượt đang đọc nền, phát khi thay đổi
 
     def __init__(self, pipeline: ImprovePipeline, parent=None):
         self._flushes: list[str] = []
@@ -78,6 +79,7 @@ class DecodeWorker(BaseDecodeWorker):
         late = self._reader.take_late_reads()   # đọc nền xong đúng lúc chốt: báo mã trước khi chốt lượt
         if late and purpose != FLUSH_RESET:
             self.reads.emit(late)
+        self.fallback.emit([])                  # lượt đọc nền đã chốt hoặc bị bỏ trong flush
         self.flushed.emit(purpose, tracks)
 
     def _loop(self):
@@ -118,6 +120,8 @@ class DecodeWorker(BaseDecodeWorker):
             self.reads.emit(r.first_reads)
         if r.finished:
             self.passes.emit(r.finished)
+        if r.fallback is not None:              # sau passes: lượt vừa chốt đã rời danh sách đọc nền
+            self.fallback.emit(r.fallback)
 
 
 # ── Main window ───────────────────────────────────────────────────────────────
@@ -163,6 +167,7 @@ class MainWindow(QMainWindow):
         self.worker.reads.connect(self.on_reads_done)
         self.worker.passes.connect(self.on_passes_done)
         self.worker.flushed.connect(self.on_flushed)
+        self.worker.fallback.connect(self.on_fallback_status)
         self.stats = SessionStats()
         self.controller = RunController(self.mgr, self.worker, self)
         self._decoding = False
@@ -432,6 +437,18 @@ class MainWindow(QMainWindow):
         if self.tray is not None:
             self.tray.set_read_count(self.stats.read_count)
         self.workspace.set_elapsed(self.stats.elapsed())
+        self._render_fallback()
+
+    def _render_fallback(self):
+        """Dòng và nhãn chân của lượt đang đọc nền; gọi định kỳ để cập nhật số giây."""
+        rows = list(self.stats.solving.values())
+        for row in rows:
+            self.workspace.upsert_row(row)
+        self.workspace.set_fallback(rows)
+
+    def on_fallback_status(self, statuses):
+        self.stats.on_fallback(statuses)
+        self._render_fallback()
 
     # ── Panel băng chuyền (tab trong cửa sổ Cấu hình) ─────────────────────────
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QColor
 from PyQt5.QtWidgets import (QAbstractItemView, QFrame, QHBoxLayout, QHeaderView, QLabel, QMenu,
@@ -10,7 +12,7 @@ from PyQt5.QtWidgets import (QAbstractItemView, QFrame, QHBoxLayout, QHeaderView
 
 from . import theme
 from .run_controller import RunState
-from .session_stats import PassRow, RowState
+from .session_stats import STAGE_QUEUED, PassRow, RowState, solving_text
 
 MAX_ROWS = 200
 FLASH_MS = 300
@@ -20,7 +22,8 @@ STATE_TEXT = {RunState.IDLE: "SẴN SÀNG", RunState.TUNING: "CHỈNH CAMERA",
               RunState.STOPPING: "ĐANG DỪNG", RunState.ERROR: "LỖI"}
 
 ROW_MARK = {RowState.READING: ("…", theme.MUTED), RowState.OK: ("✓", theme.GREEN),
-            RowState.CONFLICT: ("⚠", theme.AMBER), RowState.FAILED: ("✗", theme.RED)}
+            RowState.CONFLICT: ("⚠", theme.AMBER), RowState.FAILED: ("✗", theme.RED),
+            RowState.SOLVING: ("⏳", theme.AMBER)}
 
 
 def _label(text: str, name: str, parent=None) -> QLabel:
@@ -240,6 +243,9 @@ class Workspace(QWidget):
         self.lbl_processing = _label("Xử lý —", "footerItem")
         self.lbl_keyboard = _label("", "footerItem")
         self.lbl_keyboard.hide()
+        self.lbl_fallback = _label("", "footerItem")
+        self.lbl_fallback.hide()
+        row.addWidget(self.lbl_fallback)
         row.addWidget(self.lbl_keyboard)
         row.addWidget(self.lbl_camera)
         row.addWidget(self.lbl_processing)
@@ -365,16 +371,38 @@ class Workspace(QWidget):
         index = item.row()
         mark, color = ROW_MARK[row.state]
         failed = row.state is RowState.FAILED
-        item.setText("không đọc được" if failed else row.text or "")
-        item.setToolTip(row.text or "")
-        item.setForeground(QColor(theme.RED if failed else theme.TEXT))
+        if row.state is RowState.SOLVING:
+            item.setText(solving_text(row, time.monotonic()))
+            item.setToolTip("Lượt chưa đọc được khi đi qua, đang chạy thuật toán đọc nền (B rồi C)")
+            item.setForeground(QColor(theme.AMBER))
+        else:
+            item.setText("không đọc được" if failed else row.text or "")
+            item.setToolTip(row.text or "")
+            item.setForeground(QColor(theme.RED if failed else theme.TEXT))
         cell = self.table.item(index, 2)
         cell.setText(mark)
         cell.setForeground(QColor(color))
 
+    def set_fallback(self, rows: list[PassRow]):
+        """Nhãn chân màn hình cho các lượt đang đọc nền (dòng SOLVING); ẩn khi không còn lượt nào."""
+        if not rows:
+            self.lbl_fallback.hide()
+            self.lbl_fallback.setToolTip("")
+            return
+        running = [r for r in rows if r.stage != STAGE_QUEUED]
+        text = "Đọc nền ● {} lượt".format(len(rows))
+        if running:
+            text += " · đang chạy {}".format(running[0].stage)
+        self.lbl_fallback.setText(text)
+        now = time.monotonic()
+        self.lbl_fallback.setToolTip("\n".join("Lượt {}: {}".format(r.track_id, solving_text(r, now)) for r in rows))
+        self.lbl_fallback.show()
+        self._set_level(self.lbl_fallback, "warn")
+
     def clear_results(self):
         self.table.setRowCount(0)
         self._items.clear()
+        self.set_fallback([])
         self.set_latest(None, "")
         self.set_kpis(0, None, None)
         self.set_elapsed(0.0)

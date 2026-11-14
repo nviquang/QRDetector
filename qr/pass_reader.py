@@ -61,10 +61,22 @@ class FrameResult:
     cascade_ms: float
     finished: list[Track] = field(default_factory=list)   # lượt vừa kết thúc
     first_reads: list[Track] = field(default_factory=list)   # lượt vừa có nội dung lần đầu
+    fallback: list[FallbackStatus] | None = None   # lượt đang chờ đọc nền; None = không đổi từ lần trước
 
     @property
     def results(self) -> list[str]:
         return [t for t in self.texts if t]
+
+
+STAGE_QUEUED = "queued"
+
+
+@dataclass
+class FallbackStatus:
+    track_id: int
+    stage: str          # STAGE_QUEUED, "B", "C" (ComboBC) hoặc pass_fallback.STAGE_SOLVING
+    since: float        # time.monotonic() lúc vào hàng đợi / vào giai đoạn
+    position: int       # thứ tự trong hàng đợi (1 = kế tiếp); 0 khi đang giải
 
 
 def _observation(det: Detection) -> Observation:
@@ -111,6 +123,8 @@ class PassReader:
         self._crops: dict[int, list] = {}        # track_id → crop của lượt chưa đọc chắc
         self._held: dict[int, Track] = {}        # khóa việc nền → lượt đang chờ kết quả
         self._late_reads: list[Track] = []       # lượt bộ đọc nền vừa đọc được, chờ báo
+        self._held_at: dict[int, float] = {}     # khóa việc nền → monotonic lúc gửi
+        self._fallback_mark: tuple = ((), 0)     # trạng thái đọc nền lần báo gần nhất
 
     def warmup(self):
         self._pipeline.warmup()
@@ -124,6 +138,31 @@ class PassReader:
         return min(default_n, FAST_EVERY_N) if self._awaiting_read else default_n
 
     def process(self, image_bgr: np.ndarray, frame_idx: int) -> FrameResult:
+        result = self._process_frame(image_bgr, frame_idx)
+        result.fallback = self._fallback_changes()
+        return result
+
+    def fallback_status(self) -> list[FallbackStatus]:
+        """Các lượt đang chờ bộ đọc nền, theo thứ tự gửi."""
+        statuses = []
+        queued = 0
+        for key, t in sorted(self._held.items()):
+            stage = self._fallback.stage(key) if hasattr(self._fallback, "stage") else None
+            if stage is None:
+                queued += 1
+                statuses.append(FallbackStatus(t.track_id, STAGE_QUEUED, self._held_at.get(key, 0.0), queued))
+            else:
+                statuses.append(FallbackStatus(t.track_id, stage[0], stage[1], 0))
+        return statuses
+
+    def _fallback_changes(self) -> list[FallbackStatus] | None:
+        mark = (tuple(self._held), getattr(self._fallback, "revision", 0))
+        if mark == self._fallback_mark:
+            return None
+        self._fallback_mark = mark
+        return self.fallback_status()
+
+    def _process_frame(self, image_bgr: np.ndarray, frame_idx: int) -> FrameResult:
         finished: list[Track] = self._poll_fallback()
         shape = image_bgr.shape[:2]
         if self._last_idx is not None and (frame_idx < self._last_idx or shape != self._shape):
@@ -180,7 +219,9 @@ class PassReader:
         self._last_overlays = []
         self._awaiting_read = False
         finished = self._close(self._tracker.finish())
-        return finished + self._drain_fallback()
+        finished += self._drain_fallback()
+        self._fallback_mark = ((), getattr(self._fallback, "revision", 0))   # người gọi tự xóa trạng thái cũ
+        return finished
 
     def take_late_reads(self) -> list[Track]:
         """Lượt đọc nền xong trong lúc flush — chưa được báo qua ``first_reads``."""
@@ -315,6 +356,7 @@ class PassReader:
             logger.warning("pass_fallback_skipped id=%d (hàng đợi đầy hoặc bộ giải lỗi)", t.track_id)
             return False
         self._held[key] = t
+        self._held_at[key] = time.monotonic()
         return True
 
     def _poll_fallback(self) -> list[Track]:
@@ -324,6 +366,7 @@ class PassReader:
         done = []
         for key, text, ms, error in results:
             t = self._held.pop(key, None)
+            self._held_at.pop(key, None)
             if t is None:
                 continue
             if error:
@@ -345,5 +388,6 @@ class PassReader:
             self._log_finished(t)
             done.append(t)
         self._held.clear()
+        self._held_at.clear()
         self._fallback.discard()
         return done

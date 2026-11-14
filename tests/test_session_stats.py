@@ -10,7 +10,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from demo_ui.session_stats import RowState, SessionStats, age_text  # noqa: E402
+from demo_ui.session_stats import RowState, SessionStats, age_text, solving_text  # noqa: E402
 
 
 def track(track_id=1, text="A", observations=5, conflicting=False):
@@ -29,6 +29,25 @@ class SessionStatsTests(unittest.TestCase):
         self.assertIsNone(self.stats.read_rate)
         self.assertIsNone(self.stats.per_minute())
         self.assertEqual(self.stats.read_count, 0)
+
+    def test_fallback_rows_do_not_count_until_pass_finishes(self):
+        queued = types.SimpleNamespace(track_id=3, stage="queued", since=90.0, position=2)
+        (row,) = self.stats.on_fallback([queued])
+        self.assertEqual((row.track_id, row.state, row.text), (3, RowState.SOLVING, None))
+        self.assertEqual(solving_text(row, 100.0), "chờ đọc lại (thứ 2) · 10 s")
+        (same,) = self.stats.on_fallback([types.SimpleNamespace(track_id=3, stage="B", since=98.0, position=0)])
+        self.assertIs(same, row)
+        self.assertEqual(solving_text(row, 100.0), "đang đọc lại · B 2 s")
+        self.assertEqual((self.stats.read_count, self.stats.finished_count), (0, 0))
+        (final,) = self.stats.on_passes([track(3, None)])
+        self.assertIs(final, row)
+        self.assertEqual(final.state, RowState.FAILED)
+        self.assertEqual(self.stats.solving, {})
+
+    def test_fallback_snapshot_drops_rows_no_longer_listed(self):
+        self.stats.on_fallback([types.SimpleNamespace(track_id=1, stage="C", since=0.0, position=0)])
+        self.assertEqual(self.stats.on_fallback([]), [])
+        self.assertEqual(self.stats.solving, {})
 
     def test_first_read_creates_reading_row_and_updates_latest(self):
         (row,) = self.stats.on_reads([track(7, "A")])

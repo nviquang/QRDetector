@@ -8,7 +8,7 @@ nhận nhầm của detector: không hiện, không tính vào tỉ lệ (vẫn 
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import KW_ONLY, dataclass
 from enum import Enum
 import time
 
@@ -21,6 +21,10 @@ class RowState(Enum):
     OK = "ok"
     CONFLICT = "conflict"   # lượt có hơn một nội dung khác nhau
     FAILED = "failed"
+    SOLVING = "solving"     # lượt chưa đọc được, đang chờ / chạy bộ đọc nền (B, C)
+
+
+STAGE_QUEUED = "queued"     # như qr.pass_reader.STAGE_QUEUED; module này không import qr
 
 
 @dataclass
@@ -29,6 +33,17 @@ class PassRow:
     text: str | None
     clock: str
     state: RowState
+    _: KW_ONLY                      # MergedRow kế thừa và tạo theo vị trí: trường mới không được chen vào
+    stage: str | None = None       # SOLVING: STAGE_QUEUED, "B", "C"…
+    since: float | None = None      # SOLVING: monotonic lúc vào hàng đợi / giai đoạn
+    position: int = 0               # SOLVING + STAGE_QUEUED: thứ tự trong hàng đợi
+
+
+def solving_text(row: PassRow, now: float) -> str:
+    seconds = max(0.0, now - (row.since if row.since is not None else now))
+    if row.stage == STAGE_QUEUED:
+        return "chờ đọc lại (thứ {}) · {:.0f} s".format(row.position, seconds)
+    return "đang đọc lại · {} {:.0f} s".format(row.stage, seconds)
 
 
 def age_text(seconds: float) -> str:
@@ -58,6 +73,7 @@ class SessionStats:
         self.latest_clock = ""
         self.latest_at: float | None = None
         self._open: dict[int, PassRow] = {}
+        self.solving: dict[int, PassRow] = {}    # track_id → dòng đang đọc nền
         self._read_times: deque[float] = deque()
         self._elapsed = 0.0
         self._run_started: float | None = None
@@ -84,8 +100,25 @@ class SessionStats:
             clock = self._clock()
             row = PassRow(track.track_id, track.text, clock, RowState.READING)
             self._open[track.track_id] = row
+            self.solving.pop(track.track_id, None)
             self.latest_text, self.latest_clock = track.text, clock
             self.latest_at = self._monotonic()
+            rows.append(row)
+        return rows
+
+    def on_fallback(self, statuses) -> list[PassRow]:
+        """Ảnh chụp các lượt đang đọc nền (qr.pass_reader.FallbackStatus). Không đổi chỉ số: lượt chỉ được
+        tính khi kết thúc qua ``on_passes``. Lượt không còn trong danh sách đã/ sẽ được chốt bởi reads/passes."""
+        listed = {s.track_id for s in statuses}
+        self.solving = {tid: row for tid, row in self.solving.items() if tid in listed}
+        rows = []
+        for s in statuses:
+            row = self.solving.get(s.track_id)
+            if row is None:
+                row = PassRow(s.track_id, None, self._clock(), RowState.SOLVING)
+                self.solving[s.track_id] = row
+                self._open[s.track_id] = row
+            row.stage, row.since, row.position = s.stage, s.since, s.position
             rows.append(row)
         return rows
 
@@ -93,6 +126,7 @@ class SessionStats:
         rows = []
         for track in tracks:
             row = self._open.pop(track.track_id, None)
+            self.solving.pop(track.track_id, None)
             if _is_noise(track):
                 self.noise_count += 1
                 continue
