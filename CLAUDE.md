@@ -27,6 +27,7 @@ qr/                      → pipeline QR
   tracker.py             → PassTracker: gom detection qua frame thành lượt
   pass_reader.py         → PassReader: detect → ghép lượt → bỏ cascade QR đã đọc chắc (kiểm tra lại mỗi 5 lần) → ms + Overlay
   multiframe.py          → PassDecoder: đọc theo lượt (xếp chồng ROI hỏng, Wiener theo vận tốc)
+  candidate_match.py     → đối soát tem khó với danh sách mã còn hiệu lực (thử nghiệm, chưa nối vào app; experiments/candidate_match_sim.py)
 ui/main_window.py        → bind UI ↔ CameraManager, panel quay/đóng bất đồng bộ
 camera/recording.py      → AVI không nén MVSDK, một file/phiên, trạng thái và disk guard
 camera/conveyor.py       → công thức băng chuyền thuần (exposure tối đa theo tốc độ/mm/px, px/ô, căn dải ROI)
