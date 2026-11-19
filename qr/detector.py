@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 
 import numpy as np
 import torch
@@ -11,20 +10,14 @@ from qrdet import QRDetector as _QRDetector
 # qrdet.detect() không cho chỉnh imgsz → gọi thẳng model YOLO và dùng lại helper của qrdet
 from qrdet.qrdet import _prepare_input, _yolo_v8_results_to_dict
 
+from .detection import Detection  # noqa: F401  (giữ đường import cũ qr.detector.Detection)
+
 logger = logging.getLogger("solution.qr")
 
 # Dải hẹp (vùng đọc quanh băng): cạnh dài bị thu về imgsz làm QR quá nhỏ, độ tin cậy tụt dưới ngưỡng. Đo trên
 # Basler 2856×400: imgsz 1280 cho 0,21–0,71, 1600 cho ~0,8 và không chậm hơn vì ảnh có ít điểm hơn nhiều.
 BAND_ASPECT = 4.0
 BAND_MIN_IMGSZ = 1600
-
-
-@dataclass
-class Detection:
-    bbox_xyxy: np.ndarray   # [x1, y1, x2, y2] float32
-    quad_xy: np.ndarray     # (4, 2) float32 — padded quad của qrdet, dùng cho warp trong cascade
-    confidence: float
-    polygon_xy: np.ndarray | None = None   # (N, 2) đường bao mask — nguồn quad hiển thị khi chưa đọc được
 
 
 def resolve_device(requested: str, cuda_available: bool) -> str:

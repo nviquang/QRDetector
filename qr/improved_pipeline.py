@@ -18,6 +18,7 @@ scale, cộng gốc ROI; bước warp đi ngược qua homography) — UI vẽ q
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Callable
 
@@ -81,6 +82,25 @@ _CASCADE = (
 )
 
 
+def make_detector(model_size: str = "s", conf_th: float = 0.3, imgsz: int = 1280, device: str = "auto",
+                  half: bool = False):
+    """Chọn bộ phát hiện theo biến môi trường ``QR_DETECTOR``:
+    - ``qrdet`` (mặc định): qrdet YOLOv8-seg trên torch (GPU nếu có), ``model_size``/``imgsz`` như cũ;
+    - ``onnx`` / ``openvino``: YOLOv8n detect chuyển từ qrdet-n (``qr/models/qrdet_n_detect.onnx``), CPU, không cần
+      torch; tỉ lệ thu ``QR_DETECT_SCALE`` (mặc định 0,6), số luồng ``QR_DETECT_THREADS``.
+    """
+    kind = os.environ.get("QR_DETECTOR", "qrdet").strip().lower()
+    if kind in ("onnx", "onnxruntime", "openvino"):
+        from .detector_onnx import OnnxQRDetector
+        threads = os.environ.get("QR_DETECT_THREADS")
+        return OnnxQRDetector(scale=float(os.environ.get("QR_DETECT_SCALE", "0.6")), conf_th=conf_th,
+                              backend="openvino" if kind == "openvino" else "onnxruntime",
+                              threads=int(threads) if threads else None)
+    if kind != "qrdet":
+        raise ValueError(f"QR_DETECTOR={kind!r} không hợp lệ (qrdet | onnx | openvino)")
+    return QRDetector(model_size=model_size, conf_th=conf_th, imgsz=imgsz, device=device, half=half)
+
+
 class ImprovePipeline:
     def __init__(
         self,
@@ -106,7 +126,7 @@ class ImprovePipeline:
         self.code_pattern = code_pattern
         self.expected_symbol = expected_symbol
         self.roi_margin = roi_margin
-        self._detector = detector if detector is not None else QRDetector(
+        self._detector = detector if detector is not None else make_detector(
             model_size=model_size, conf_th=conf_th, imgsz=imgsz, device=device, half=half)
         self._roi_margin = roi_margin
 

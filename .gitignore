@@ -34,3 +34,6 @@ experiments/out/
 
 # ── Dữ liệu hiện trường đã làm sạch (hard link tới TIFF gốc) ─────────────────
 data/
+
+# Checkpoint trung gian của tools/export_qrdet_detect.py (chỉ commit bản ONNX)
+qr/models/*.pt
