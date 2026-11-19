@@ -1,5 +1,7 @@
 # Độ khả thi thuật toán đọc QR ở hình học hiện trường
 
+> **Cấu hình cũ (trước 18/11/2026).** Tài liệu này lập theo thông số đã thay thế (tem 25/36 mm, camera cao 1 m, 0,673 mm/px, băng 100 mm/s, nội dung 12#12 hoặc version 1, một camera, máy CPU). Ràng buộc hiện hành: mục "Bài toán và ràng buộc" trong `README.md`. Kỹ thuật và tài liệu tham khảo vẫn dùng được, nhưng số px/ô và mọi đề xuất đổi tem, nội dung, version/mức sửa lỗi, camera, ống kính, line-scan, đầu đọc thương mại hay vị trí dán tem không còn áp dụng.
+
 Ngày đo: 06/11/2026. Dữ liệu: 30 frame tĩnh, cấu hình chuẩn `experiments/benchmark_basler.json`, lưu tại `experiments/out/static_20261106/` (kèm script thử nghiệm trong `proto/`).
 
 ## Kết luận

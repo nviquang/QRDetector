@@ -1,0 +1,322 @@
+[
+ {
+  "job": 0,
+  "sess": "xuong1/20261113_133123291",
+  "n_obs": 5,
+  "speed": 12.4,
+  "vel": [
+   -2.0,
+   -12.2
+  ],
+  "side": 80.7,
+  "blur": 0.0,
+  "text": null,
+  "stage": "C",
+  "ms": 15021,
+  "err": null
+ },
+ {
+  "job": 0,
+  "sess": "xuong1/20261113_133123291",
+  "n_obs": 5,
+  "speed": 12.4,
+  "vel": [
+   -2.0,
+   -12.2
+  ],
+  "side": 80.7,
+  "blur": 6.0,
+  "text": null,
+  "stage": "C",
+  "ms": 54483,
+  "err": null
+ },
+ {
+  "job": 0,
+  "sess": "xuong1/20261113_133123291",
+  "n_obs": 5,
+  "speed": 12.4,
+  "vel": [
+   -2.0,
+   -12.2
+  ],
+  "side": 80.7,
+  "blur": 10.0,
+  "text": null,
+  "stage": "C",
+  "ms": 92272,
+  "err": null
+ },
+ {
+  "job": 0,
+  "sess": "xuong1/20261113_133123291",
+  "n_obs": 5,
+  "speed": 12.4,
+  "vel": [
+   -2.0,
+   -12.2
+  ],
+  "side": 80.7,
+  "blur": 14.0,
+  "text": null,
+  "stage": "C",
+  "ms": 75749,
+  "err": null
+ },
+ {
+  "job": 0,
+  "sess": "xuong1/20261113_133123291",
+  "n_obs": 5,
+  "speed": 12.4,
+  "vel": [
+   -2.0,
+   -12.2
+  ],
+  "side": 80.7,
+  "blur": 18.0,
+  "text": null,
+  "stage": "C",
+  "ms": 86425,
+  "err": null
+ },
+ {
+  "job": 1,
+  "sess": "xuong2/20261113_133521948",
+  "n_obs": 5,
+  "speed": 7.5,
+  "vel": [
+   -0.0,
+   -7.5
+  ],
+  "side": 60.0,
+  "blur": 0.0,
+  "text": null,
+  "stage": "C",
+  "ms": 24630,
+  "err": null
+ },
+ {
+  "job": 1,
+  "sess": "xuong2/20261113_133521948",
+  "n_obs": 5,
+  "speed": 7.5,
+  "vel": [
+   -0.0,
+   -7.5
+  ],
+  "side": 60.0,
+  "blur": 6.0,
+  "text": null,
+  "stage": "C",
+  "ms": 66041,
+  "err": null
+ },
+ {
+  "job": 1,
+  "sess": "xuong2/20261113_133521948",
+  "n_obs": 5,
+  "speed": 7.5,
+  "vel": [
+   -0.0,
+   -7.5
+  ],
+  "side": 60.0,
+  "blur": 10.0,
+  "text": null,
+  "stage": "C",
+  "ms": 66996,
+  "err": null
+ },
+ {
+  "job": 1,
+  "sess": "xuong2/20261113_133521948",
+  "n_obs": 5,
+  "speed": 7.5,
+  "vel": [
+   -0.0,
+   -7.5
+  ],
+  "side": 60.0,
+  "blur": 14.0,
+  "text": null,
+  "stage": "C",
+  "ms": 113467,
+  "err": null
+ },
+ {
+  "job": 1,
+  "sess": "xuong2/20261113_133521948",
+  "n_obs": 5,
+  "speed": 7.5,
+  "vel": [
+   -0.0,
+   -7.5
+  ],
+  "side": 60.0,
+  "blur": 18.0,
+  "text": null,
+  "stage": "C",
+  "ms": 109290,
+  "err": null
+ },
+ {
+  "job": 2,
+  "sess": "xuong2/20261113_133546659",
+  "n_obs": 5,
+  "speed": 7.6,
+  "vel": [
+   0.4,
+   -7.6
+  ],
+  "side": 83.0,
+  "blur": 0.0,
+  "text": null,
+  "stage": "C",
+  "ms": 24584,
+  "err": null
+ },
+ {
+  "job": 2,
+  "sess": "xuong2/20261113_133546659",
+  "n_obs": 5,
+  "speed": 7.6,
+  "vel": [
+   0.4,
+   -7.6
+  ],
+  "side": 83.0,
+  "blur": 6.0,
+  "text": null,
+  "stage": "C",
+  "ms": 55057,
+  "err": null
+ },
+ {
+  "job": 2,
+  "sess": "xuong2/20261113_133546659",
+  "n_obs": 5,
+  "speed": 7.6,
+  "vel": [
+   0.4,
+   -7.6
+  ],
+  "side": 83.0,
+  "blur": 10.0,
+  "text": null,
+  "stage": "C",
+  "ms": 56193,
+  "err": null
+ },
+ {
+  "job": 2,
+  "sess": "xuong2/20261113_133546659",
+  "n_obs": 5,
+  "speed": 7.6,
+  "vel": [
+   0.4,
+   -7.6
+  ],
+  "side": 83.0,
+  "blur": 14.0,
+  "text": null,
+  "stage": "C",
+  "ms": 48380,
+  "err": null
+ },
+ {
+  "job": 2,
+  "sess": "xuong2/20261113_133546659",
+  "n_obs": 5,
+  "speed": 7.6,
+  "vel": [
+   0.4,
+   -7.6
+  ],
+  "side": 83.0,
+  "blur": 18.0,
+  "text": null,
+  "stage": "C",
+  "ms": 54208,
+  "err": null
+ },
+ {
+  "job": 3,
+  "sess": "xuong2/20261113_133735410",
+  "n_obs": 5,
+  "speed": 7.8,
+  "vel": [
+   0.7,
+   -7.8
+  ],
+  "side": 53.9,
+  "blur": 0.0,
+  "text": null,
+  "stage": "C",
+  "ms": 8226,
+  "err": null
+ },
+ {
+  "job": 3,
+  "sess": "xuong2/20261113_133735410",
+  "n_obs": 5,
+  "speed": 7.8,
+  "vel": [
+   0.7,
+   -7.8
+  ],
+  "side": 53.9,
+  "blur": 6.0,
+  "text": null,
+  "stage": "C",
+  "ms": 20447,
+  "err": null
+ },
+ {
+  "job": 3,
+  "sess": "xuong2/20261113_133735410",
+  "n_obs": 5,
+  "speed": 7.8,
+  "vel": [
+   0.7,
+   -7.8
+  ],
+  "side": 53.9,
+  "blur": 10.0,
+  "text": null,
+  "stage": "C",
+  "ms": 28116,
+  "err": null
+ },
+ {
+  "job": 3,
+  "sess": "xuong2/20261113_133735410",
+  "n_obs": 5,
+  "speed": 7.8,
+  "vel": [
+   0.7,
+   -7.8
+  ],
+  "side": 53.9,
+  "blur": 14.0,
+  "text": null,
+  "stage": "C",
+  "ms": 31317,
+  "err": null
+ },
+ {
+  "job": 3,
+  "sess": "xuong2/20261113_133735410",
+  "n_obs": 5,
+  "speed": 7.8,
+  "vel": [
+   0.7,
+   -7.8
+  ],
+  "side": 53.9,
+  "blur": 18.0,
+  "text": null,
+  "stage": "C",
+  "ms": 38264,
+  "err": null
+ }
+]

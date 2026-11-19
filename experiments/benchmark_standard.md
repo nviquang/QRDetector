@@ -1,5 +1,7 @@
 # Video chuẩn để so sánh thuật toán đọc QR
 
+> **Cấu hình cũ (trước 18/11/2026).** Tài liệu này lập theo thông số đã thay thế (tem 25/36 mm, camera cao 1 m, 0,673 mm/px, băng 100 mm/s, nội dung 12#12 hoặc version 1, một camera, máy CPU). Ràng buộc hiện hành: mục "Bài toán và ràng buộc" trong `README.md`. Kỹ thuật và tài liệu tham khảo vẫn dùng được, nhưng số px/ô và mọi đề xuất đổi tem, nội dung, version/mức sửa lỗi, camera, ống kính, line-scan, đầu đọc thương mại hay vị trí dán tem không còn áp dụng.
+
 Mục đích: một bộ dữ liệu quay một lần, đúng hình học hiện trường, để mọi giải pháp (pipeline hiện tại, bộ đọc mềm, quét vệt mờ mịn, SDK thương mại…) được chấm trên cùng các frame.
 
 Cấu hình máy: `experiments/benchmark_basler.json`. Kiểm tra: `experiments/check_setup.py`. Quay: `experiments/record_basler.py`.

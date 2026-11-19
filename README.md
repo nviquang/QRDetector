@@ -6,35 +6,67 @@
 Camera (MindVision Camera* API) → frame BGR độc lập → mỗi N frame → ImprovePipeline → quad + text QR
 ```
 
-## Thông số hiện trường và tem
+## Bài toán và ràng buộc
 
-Đây là bộ thông số chuẩn; các tài liệu khác dẫn tới mục này. Số liệu trong `docs/plans/`, `docs/specs/` và `docs/DE_XUAT_KHAC_PHUC.md` thuộc phòng thí nghiệm cũ (camera MindVision 2448 × 2048, tem 25 mm, khoảng 0,43 mm/px), chỉ để tham khảo lịch sử.
+Đây là nguồn chuẩn duy nhất cho thông số hiện trường (chốt 18/11/2026); mọi tài liệu, báo cáo và nghiên cứu khác phải theo mục này. Bài toán: **tối ưu việc đọc QR trên phần cứng sẵn có**. Các mục ở bảng "Bất biến" không được đề xuất thay đổi; chỉ cải tiến những thứ ở bảng "Được phép thay đổi".
+
+### Bất biến (không đề xuất thay đổi)
 
 | Hạng mục | Giá trị |
 |---|---|
-| Tem | 36 × 36 mm (phần đen), không tăng được |
-| Nội dung | 12 chữ số + `#` + 12 chữ số, ví dụ `111111111111#111111111111` (25 ký tự) |
-| Quy cách mã khi in | **QR version 1 (21 × 21 ô), mức sửa lỗi M**, mã hóa tách đoạn: số, `#` ở chế độ byte, số (đúng 128 bit). Phải ép version 1 và cách tách đoạn: phần mềm in thông thường mã hóa cả chuỗi ở chế độ byte (212 bit) nên tự đẩy lên version 2–4, ô nhỏ hơn và khó đọc hơn |
-| Camera | Basler a2A2840-48umBAS, 2856 × 2848 px, điểm ảnh 2,74 µm |
-| Ống kính, độ cao | 4 mm, f/4, camera cao 1 m vuông góc mặt băng |
-| Vùng đọc | 1,6 × 0,6 m (cạnh 1,6 m theo chiều ngang ảnh, băng chạy theo chiều 0,6 m) |
-| Độ phân giải đo được | 0,673 mm/px → tem 36 mm rộng khoảng 54 px: version 1 khoảng 2,57 px/ô (version 2: 2,16; version 3: 1,86) |
-| Băng chuyền | 100 mm/s |
-| Exposure, gain khuyến nghị | 3 ms (vệt mờ khoảng 0,2 ô), gain 6 dB; nền trắng tem nên ở 170–225/255, thiếu sáng thì tăng đèn trước rồi mới tăng gain (tối đa khoảng 18 dB) |
-| Máy xử lý | Máy hiện trường chỉ có CPU; GPU chỉ có ở máy phát triển |
+| Camera | Basler a2A2840-48umBAS, đơn sắc, 8 MP (2856 × 2848 px, điểm ảnh 2,74 µm, cảm biến Sony IMX546 2/3" global shutter), USB 3 |
+| Ống kính | 4 mm |
+| Số camera | 2, đặt cạnh nhau phủ bề rộng băng |
+| QR | **32 × 32 mm**, **version 2 (25 × 25 ô), mức sửa lỗi M** → ô rộng 1,28 mm |
+| Nội dung | `dãy số` + `#` + `dãy số`; độ dài từng dãy **không cố định** (regex `^\d+#\d+$`) |
+| Vị trí dán tem | Bất kỳ trên tấm kính (vị trí và góc xoay tùy ý) |
+| Băng chuyền | Rộng 3,25 m (ngang), dài 1,7 m (theo chiều chạy), tốc độ **80–120 mm/s** |
+| Máy xử lý | **Jetson Nano** hoặc **máy tính chỉ có CPU**; thuật toán phải chạy được trên cả hai |
 
-Tạo mã đúng quy cách bằng `segno`:
+### Được phép thay đổi
+
+| Hạng mục | Phạm vi |
+|---|---|
+| Độ cao camera | Chỉnh sao cho mỗi camera phủ 1,5–1,6 m bề ngang, hai camera xấp xỉ 3,25 m |
+| Buồng tối và chiếu sáng | Buồng tối dài 60 cm theo chiều chạy, đèn bên trong: loại đèn, vị trí, góc, khuếch tán, strobe đồng bộ exposure, tấm che |
+| Thông số camera | Exposure, gain, ROI dải (theo vùng buồng tối), fps, trigger, định dạng ảnh |
+| Phần mềm | Toàn bộ thuật toán phát hiện, theo dõi, giải mã, lịch chạy, tối ưu suy luận cho Jetson Nano/CPU |
+
+Chưa xác nhận (hỏi trước khi đưa vào đề xuất): góc nghiêng camera, việc lắp thêm cảm biến quang/encoder, bản Jetson (Jetson Nano đời đầu Maxwell, JetPack 4.6, Ubuntu 18.04, Python 3.6, hay Jetson Orin Nano), cấu hình máy CPU.
+
+### Số suy ra
+
+Mô hình lỗ kim, ống 4 mm, chưa tính méo ống kính (ống góc rộng thường méo thùng, px/ô ở mép ảnh thấp hơn ở giữa: phải đo lại ở mép).
+
+| Bề ngang mỗi camera | 1,50 m | 1,60 m | 1,66 m* |
+|---|---:|---:|---:|
+| Độ cao camera xấp xỉ | 0,77 m | 0,82 m | 0,85 m |
+| mm/px | 0,525 | 0,560 | 0,581 |
+| Cạnh QR 32 mm | 61 px | 57 px | 55 px |
+| **px/ô (V2)** | **2,44** | **2,29** | **2,20** |
+
+\* Hai camera 1,6 m chỉ phủ 3,2 m, hụt 5 cm so với băng 3,25 m. Muốn mọi tem nằm trọn trong ít nhất một camera thì vùng chồng phải ≥ đường chéo QR (~45 mm) cộng biên, tức mỗi camera khoảng 1,66 m. Cần xác nhận tấm kính có phủ tới sát mép băng không.
+
+- **Theo chiều chạy:** buồng tối 60 cm ≈ 1070 hàng ảnh ở 0,56 mm/px (ROI dải khoảng 2856 × 1072, khoảng 3 MP). Tem nằm trong buồng **5–7,5 s** (120–80 mm/s).
+- **Vệt mờ:** `vệt = v × t`. Giữ vệt ≤ 0,25 ô (0,32 mm) cần exposure ≤ 2,7 ms ở 120 mm/s, ≤ 4 ms ở 80 mm/s. Khuyến nghị **≤ 2,5 ms** ở mọi tốc độ (vệt ≤ 0,3 mm ≈ 0,54 px), bù độ sáng bằng đèn trong buồng tối trước rồi mới tăng gain. Không bật AE.
+- **Dung lượng V2-M** (28 byte dữ liệu = 224 bit): mã hóa tách đoạn (số, `#` ở chế độ byte, số) chứa được tổng khoảng **52 chữ số**; mã hóa cả chuỗi ở chế độ byte chỉ được **26 ký tự** (25 chữ số + `#`). Ví dụ 14#12 (27 ký tự) chỉ vừa V2-M khi tách đoạn (135 bit); phần mềm in mặc định dùng chế độ byte sẽ tự đẩy lên version 3. Khi in phải ép version 2, mức M và tách đoạn:
 
 ```python
 import segno
 from segno import consts
 
-qr = segno.make([("111111111111", consts.MODE_NUMERIC), ("#", consts.MODE_BYTE), ("111111111111", consts.MODE_NUMERIC)],
-                version=1, error="m", boost_error=False, micro=False)
+qr = segno.make([("18000090001000", consts.MODE_NUMERIC), ("#", consts.MODE_BYTE), ("000000001612", consts.MODE_NUMERIC)],
+                version=2, error="m", boost_error=False, micro=False)
 qr.save("tem.png", scale=10, border=4)
 ```
 
-Tem đang có ở phòng thí nghiệm được in theo cách mặc định nên lẫn version 1–3, mức L/M/Q/H. Kết quả đo theo từng loại tem và các hướng thuật toán: `reports/So sánh chất lượng các hướng đọc QR.md`.
+### Hệ quả cho nghiên cứu
+
+- Mức px/ô (2,2–2,44) đã cố định, thấp hơn mức 3–3,5 px/ô mà tài liệu thường khuyến nghị: phần mềm phải đọc được ở mức này. Không đề xuất tem lớn hơn, đổi nội dung/version/mức sửa lỗi, thêm hay đổi camera/ống kính, line-scan, đầu đọc thương mại, cố định vị trí dán tem.
+- Đòn bẩy phần cứng còn lại: **buồng tối + đèn** (exposure ngắn, ánh sáng đều, giảm phản xạ kính) và độ cao/ROI camera.
+- Nội dung có độ dài thay đổi: được lọc bằng `^\d+#\d+$` và bằng version/mức sửa lỗi giải ra (chỉ chấp nhận V2-M), không được giả định độ dài cố định. Có thể ghim bit cấu trúc (chỉ thị mode, trường đếm, `#` = 0x23, byte đệm 0xEC/0x11) theo từng giả thiết độ dài khi giải, nhưng bit đã dùng để ghim thì không được tính lại làm bằng chứng kiểm tra.
+- Phải chạy trên Jetson Nano (ARM, GPU Maxwell 128 nhân, RAM 4 GB chung) hoặc CPU: tính đến TensorRT/ONNX Runtime, bộ nhớ, và hai luồng camera cùng lúc. Phần riêng Windows (MVSDK, gõ phím `SendInput`, khay hệ thống) không có trên Jetson.
+- **Dữ liệu hiện có chưa đúng cấu hình này:** `data/field/raw` quay ngày 06/11 và 13/11 ở camera cao 1 m (0,673 mm/px), tem 36 mm in lẫn version, không có buồng tối, ngày 13/11 có AE (vệt mờ 10–20 px). Dùng được để thử luồng và phát hiện, không dùng để kết luận tỉ lệ đọc. Thông số cũ của phòng thí nghiệm (MindVision 2448 × 2048, tem 25 mm, 0,43 mm/px) trong `docs/` và các báo cáo trước 18/11/2026 chỉ để tham khảo lịch sử.
 
 ---
 
@@ -136,9 +168,25 @@ Cùng giao diện với bản demo bên dưới, dùng camera Basler (viết cho
 python main_basler.py
 ```
 
-Cấu hình lưu riêng ở `config/basler_settings.json`; gain tính bằng dB (mặc định 6 dB). Exposure mặc định trong code vẫn là 12,9 ms (thừa kế từ bản MindVision); ở 100 mm/s nên đặt **3 ms** trong tab Băng chuyền (xem mục Thông số hiện trường và tem). Kiểm tra nhanh camera: `python tools/test_basler.py --list`.
+Cấu hình lưu riêng ở `config/basler_settings.json`; gain tính bằng dB (mặc định 6 dB). Exposure mặc định trong code vẫn là 12,9 ms (thừa kế từ bản MindVision); ở 80–120 mm/s nên đặt **≤ 2,5 ms** trong tab Băng chuyền (xem mục Bài toán và ràng buộc). Kiểm tra nhanh camera: `python tools/test_basler.py --list`.
 
 **Đọc nền cho QR khó:** lượt mà bộ đọc thường không đọc được được gửi sang một tiến trình riêng chạy bộ giải trong `qr/solvers` (tái tạo trên lưới ô `grid_sr`, rồi `preproc_sweep`). Lượt đó báo mã trễ khoảng 10–20 giây sau khi tem ra khỏi khung; lượt đọc được bình thường không bị trễ. Muốn chạy pipeline cũ để đối chiếu: đặt biến môi trường `QR_FALLBACK=off` trước khi chạy (PowerShell: `$env:QR_FALLBACK="off"`).
+
+## Bản phát lại dữ liệu đã ghi
+
+Chạy đúng luồng của `main_basler.py` (giao diện, đọc nhiều frame, đọc nền B/C, bảng kết quả) trên các lần ghi trong `data/field/raw` thay cho camera. Không cần camera hay pylon; vẫn cần DLL MindVision như bản demo.
+
+```bash
+python main_replay.py
+```
+
+Tùy chọn: `--data <thư mục>` (mặc định `data/field/raw`, mỗi thư mục con chứa `frame_NNNN.tiff` + `meta.json`) và `--speed 0.5` (hệ số tốc độ, 1 = thời gian thật).
+
+- Chọn lần ghi trong **Cấu hình → Kết nối** (danh sách camera là danh sách lần ghi), rồi bấm **Bắt đầu**. Frame phát theo nhịp ghi gốc từ lúc nhận diện sẵn sàng; decode bận thì bỏ frame như camera thật.
+- Hết frame thì app tự **Dừng**, giữ số liệu phiên và hiện "Hết dữ liệu". Bấm Bắt đầu để phát lại từ đầu. Lượt khó cuối video vẫn được đọc nền xong rồi mới chốt (chờ tối đa 3 phút).
+- **Mở** ở tab Kết nối chỉ hiện frame đầu, để chỉnh vùng đọc.
+- Exposure dùng để tính vệt mờ lấy từ `meta.json` (`exposure_ms`) nếu đã điền, nếu không thì lấy ô exposure ở tab Băng chuyền. Vùng đọc được áp bằng cách cắt frame.
+- Cấu hình lưu ở `config/replay_settings.json`. **Gửi mã lên server mặc định tắt**, để mã từ dữ liệu cũ không lẫn vào dữ liệu thật.
 
 ## Phiên bản demo cho khách hàng
 
@@ -232,6 +280,7 @@ QRDetector/
 ├── main.py                 # entry app test camera
 ├── main_demo.py            # entry phiên bản demo cho khách hàng
 ├── main_basler.py          # entry bản demo dùng camera Basler
+├── main_replay.py          # entry bản phát lại data/field/raw qua luồng main_basler
 ├── main_dual.py            # entry app hai camera (MindVision + Basler)
 ├── logging_setup.py
 ├── mvsdk.py                # wrapper Python MindVision được vendor từ mẫu SDK Python/Basic

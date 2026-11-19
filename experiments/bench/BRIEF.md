@@ -1,5 +1,7 @@
 # Brief chung cho agent thử nghiệm thuật toán đọc QR
 
+> **Cấu hình cũ (trước 18/11/2026).** Tài liệu này lập theo thông số đã thay thế (tem 25/36 mm, camera cao 1 m, 0,673 mm/px, băng 100 mm/s, nội dung 12#12 hoặc version 1, một camera, máy CPU). Ràng buộc hiện hành: mục "Bài toán và ràng buộc" trong `README.md`. Kỹ thuật và tài liệu tham khảo vẫn dùng được, nhưng số px/ô và mọi đề xuất đổi tem, nội dung, version/mức sửa lỗi, camera, ống kính, line-scan, đầu đọc thương mại hay vị trí dán tem không còn áp dụng.
+
 Bài toán: đọc QR nhỏ trên băng chuyền, chỉ CPU. Mục tiêu giai đoạn này là **tăng khả năng đọc đúng**, không phải tốc độ.
 
 Dữ liệu thật: Basler 8 MP, ống 4 mm, cao 1 m, tem 36 mm, QR in lẫn version 1–3 và mức L/M/Q/H (version 1 khoảng 2,57 px/ô, version 2 khoảng 2,16, version 3 khoảng 1,86), nội dung 12 số `#` 12 số hoặc 12 số, băng khoảng 100 mm/s, exposure khoảng 3 ms, 25 fps. Ảnh khá tối (nền trắng tem chỉ 50–80/255). Ba đoạn: `gan` (băng dưới camera), `xa` (lệch ra mép), `cheo` (băng chéo).
