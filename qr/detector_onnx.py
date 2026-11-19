@@ -31,20 +31,23 @@ def letterbox_shape(h: int, w: int, scale: float) -> tuple[int, int, int, int]:
     return rh, rw, -(-rh // STRIDE) * STRIDE, -(-rw // STRIDE) * STRIDE
 
 
-def preprocess(image_bgr: np.ndarray, scale: float) -> np.ndarray:
-    """BGR uint8 → tensor 1×3×H×W float32 RGB 0..1, thu ``scale`` lần, đệm phải/dưới màu 114 như ultralytics."""
+def preprocess(image_bgr: np.ndarray, scale: float) -> tuple[np.ndarray, tuple[int, int]]:
+    """BGR uint8 → (tensor 1×3×H×W float32 RGB 0..1, (lề trái, lề trên)). Giống LetterBox của ultralytics: thu
+    ``scale`` lần bằng INTER_LINEAR, đệm màu 114 chia đều hai phía lên bội 32 — để kết quả khớp bản chạy torch."""
     h, w = image_bgr.shape[:2]
     rh, rw, ph, pw = letterbox_shape(h, w, scale)
-    small = image_bgr if (rh, rw) == (h, w) else cv2.resize(image_bgr, (rw, rh), interpolation=cv2.INTER_AREA)
+    small = image_bgr if (rh, rw) == (h, w) else cv2.resize(image_bgr, (rw, rh), interpolation=cv2.INTER_LINEAR)
+    top, left = int(round((ph - rh) / 2 - 0.1)), int(round((pw - rw) / 2 - 0.1))
     canvas = np.full((ph, pw, 3), PAD_VALUE, np.uint8)
-    canvas[:rh, :rw] = small
+    canvas[top:top + rh, left:left + rw] = small
     rgb = canvas[..., ::-1]
-    return np.ascontiguousarray(rgb.transpose(2, 0, 1)[None], np.float32) / 255.0
+    return np.ascontiguousarray(rgb.transpose(2, 0, 1)[None], np.float32) / 255.0, (left, top)
 
 
 def postprocess(out: np.ndarray, scale: float, conf_th: float, iou_th: float,
-                shape: tuple[int, int]) -> list[tuple[np.ndarray, float]]:
-    """Đầu ra YOLOv8 1×5×N (cx, cy, w, h, điểm) → [(bbox xyxy tọa độ ảnh gốc, điểm)] sau NMS."""
+                shape: tuple[int, int], pad: tuple[int, int] = (0, 0)) -> list[tuple[np.ndarray, float]]:
+    """Đầu ra YOLOv8 1×(5+…)×N (cx, cy, w, h, điểm, [hệ số mask nếu là model seg]) → [(bbox xyxy tọa độ ảnh gốc,
+    điểm)] sau NMS. ``pad``: lề (trái, trên) của ``preprocess``."""
     pred = np.asarray(out)[0]
     if pred.shape[0] != 5 and pred.shape[1] == 5:
         pred = pred.T
@@ -54,7 +57,7 @@ def postprocess(out: np.ndarray, scale: float, conf_th: float, iou_th: float,
         return []
     cx, cy, bw, bh = pred[0][keep], pred[1][keep], pred[2][keep], pred[3][keep]
     scores = scores[keep]
-    rects = np.column_stack([cx - bw / 2, cy - bh / 2, bw, bh]) / scale
+    rects = np.column_stack([cx - bw / 2 - pad[0], cy - bh / 2 - pad[1], bw, bh]) / scale
     idx = cv2.dnn.NMSBoxes(rects.tolist(), scores.tolist(), conf_th, iou_th)
     h, w = shape
     found = []
@@ -133,8 +136,8 @@ class OnnxQRDetector:
     def detect(self, image_bgr: np.ndarray) -> list[Detection]:
         if image_bgr.ndim == 2:
             image_bgr = cv2.cvtColor(image_bgr, cv2.COLOR_GRAY2BGR)
-        out = self._run(preprocess(image_bgr, self.scale))
-        found = postprocess(out, self.scale, self.conf_th, self.iou_th, image_bgr.shape[:2])
+        tensor, pad = preprocess(image_bgr, self.scale)
+        found = postprocess(self._run(tensor), self.scale, self.conf_th, self.iou_th, image_bgr.shape[:2], pad)
         if not found:
             return []
         gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)

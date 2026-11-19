@@ -42,9 +42,17 @@ def rotated_qr_frame(angle_deg, module_px=2.3, shape=(1072, 2856), center=(1400.
 class LetterboxTests(unittest.TestCase):
     def test_band_at_scale_06_pads_to_multiple_of_32(self):
         self.assertEqual(letterbox_shape(1072, 2856, 0.6), (643, 1714, 672, 1728))
-        t = preprocess(np.zeros((1072, 2856, 3), np.uint8), 0.6)
+        t, pad = preprocess(np.zeros((1072, 2856, 3), np.uint8), 0.6)
         self.assertEqual(t.shape, (1, 3, 672, 1728))
-        self.assertAlmostEqual(float(t[0, 0, 670, 1720]), 114 / 255, places=5)   # vùng đệm
+        self.assertEqual(pad, (7, 14))                                       # đệm chia đều hai phía như ultralytics
+        self.assertAlmostEqual(float(t[0, 0, 0, 0]), 114 / 255, places=5)
+        self.assertAlmostEqual(float(t[0, 0, 671, 1727]), 114 / 255, places=5)
+        self.assertEqual(float(t[0, 0, 300, 800]), 0.0)
+
+    def test_padding_offset_is_removed_when_mapping_back(self):
+        out = np.array([[107, 114, 30, 30, 0.9]], np.float32).T[None]       # tâm (100, 100) sau khi trừ lề (7, 14)
+        (box, _), = postprocess(out, 0.5, 0.3, 0.3, (1000, 2000), pad=(7, 14))
+        np.testing.assert_allclose(box, [170, 170, 230, 230])
 
 
 class PostprocessTests(unittest.TestCase):

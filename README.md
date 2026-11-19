@@ -178,18 +178,27 @@ Cấu hình lưu riêng ở `config/basler_settings.json`. Mặc định Basler:
 | `onnx` | YOLOv8n detect chuyển từ qrdet-n (`qr/models/qrdet_n_detect.onnx`), ONNX Runtime | `onnxruntime`, không cần torch lúc chạy |
 | `openvino` | cùng model, OpenVINO | `openvino` |
 
-`QR_DETECT_SCALE` (mặc định 0,6) là tỉ lệ thu ảnh trước khi đưa vào mạng, `QR_DETECT_THREADS` giới hạn số luồng. Tạo lại model: `python tools/export_qrdet_detect.py` (chép trọng số qrdet-n seg sang YOLOv8n detect, không train, kiểm tra hộp trùng bản seg). So độ nhạy và tốc độ trên `data/field`: `python tools/bench_detector.py`. Đo 19/11/2026 trên Ryzen 5 5500U, dải 1072 hàng, 363 frame có tem và 224 frame không tem (recall so với qrdet-s):
+`QR_DETECT_SCALE` (mặc định 0,6) là tỉ lệ thu ảnh trước khi đưa vào mạng, `QR_DETECT_THREADS` giới hạn số luồng. Tạo lại model: `python tools/export_qrdet_detect.py` (chép trọng số qrdet-n seg sang YOLOv8n detect, không train, kiểm tra hộp trùng bản seg; `--seg` xuất thêm chính bản seg sang ONNX để so). Tiền xử lý giống LetterBox của ultralytics (INTER_LINEAR, đệm chia đều hai phía). So độ nhạy và tốc độ trên `data/field`: `python tools/bench_detector.py`.
 
-| Bộ phát hiện | recall | nhầm (frame không tem) | ms p50 / p95 |
-|---|---:|---:|---:|
-| qrdet-s seg torch 1280 (hiện tại) | 100% | 1 | 437 / 765 |
-| qrdet-n seg torch 1280 | 97,8% | 7 | 207 / 499 |
-| n-detect OpenVINO ×0,5 | 92,2% | 7 | 96 / 117 |
-| n-detect OpenVINO ×0,6 | 93,2% | 8 | 153 / 240 |
-| n-detect OpenVINO ×0,75 | 98,8% | 7 | 217 / 305 |
-| n-detect ONNX Runtime ×0,75 | 98,8% | 7 | 292 / 398 |
+Đo 19/11/2026, Ryzen 5 5500U, cùng model nano (qrdet-n) ở ba cách chạy, tỉ lệ thu áp cho cạnh dài của từng ảnh; 363 frame có tem (638 hộp, không tính tem chạm mép vì sản phẩm bỏ qua), 224 frame không tem; recall so với qrdet-s:
 
-Mọi phương án đều bắt được cả 10/10 lượt. Dữ liệu là cấu hình cũ (QR 55–75 px, gần cỡ QR mới ~57 px), chỉ dùng để so bộ phát hiện. Chưa đổi mặc định: cần đo lại trên bản ghi buồng tối và máy hiện trường (Jetson/CPU).
+| Tỉ lệ | Cách chạy | recall | nhầm | ms p50 / p95 |
+|---|---|---:|---:|---:|
+| — | qrdet-s seg torch imgsz 1280 (hiện tại) | 100% | 0 | 305 / 681 |
+| ×0,45 | qrdet-n seg torch | 92,9% | 5 | 135 / 230 |
+| | n-detect torch | 92,9% | 5 | 74 / 78 |
+| | qrdet-n seg / n-detect ONNX Runtime | 91,5% | 3 | 86 / 64 |
+| | qrdet-n seg / n-detect OpenVINO | 91,5% | 3 | 68 / 52 |
+| ×0,6 | qrdet-n seg torch | 98,3% | 7 | 205 / 293 |
+| | n-detect torch | 98,3% | 7 | 133 / 142 |
+| | qrdet-n seg / n-detect ONNX Runtime | 96,6% | 8 | 154 / 115 |
+| | qrdet-n seg / n-detect OpenVINO | 96,6% | 8 | 120 / 93 |
+| ×0,75 | qrdet-n seg torch | 99,7% | 5 | 281 / 364 |
+| | n-detect torch | 99,7% | 5 | 203 / 212 |
+| | qrdet-n seg / n-detect ONNX Runtime | 99,7% | 5 | 242 / 182 |
+| | qrdet-n seg / n-detect OpenVINO | 99,7% | 5 | 185 / 144 |
+
+Ở các dòng "seg / detect" hai số ms là p50 của bản seg / bản detect (cùng recall). Kết luận: bỏ nhánh mask không đổi kết quả (seg và detect trùng nhau ở mọi tỉ lệ) và nhanh hơn 25–45%; ONNX/OpenVINO hụt 1–2 điểm recall so với torch ở ×0,45–0,6 vì tỉ lệ thu thực của ultralytics lệch chút ít (ví dụ ×0,607 thay vì ×0,6), làm vài tem sát ngưỡng độ tin rơi xuống dưới 0,3; ở ×0,75 bằng nhau. OpenVINO nhanh nhất. Mọi phương án bắt được 10/10 lượt. Cột "nhầm" (hộp trên đoạn không có tem) chưa xem lại bằng mắt: nhãn đoạn là heuristic và EDA ghi nhận có tem trắng YOLO bỏ sót trong đoạn `glass_no_det`. Dữ liệu là cấu hình cũ (QR 55–75 px, gần cỡ QR mới ~57 px), chỉ dùng để so bộ phát hiện. Chưa đổi mặc định: cần đo lại trên bản ghi buồng tối và máy hiện trường (Jetson/CPU).
 
 **Lọc chống đọc sai** (`qr/content_filter.py`, luôn bật): nội dung phải khớp `[0-9]+#[0-9]+` (toàn chuỗi); kết quả zxing phải là QR version 2 mức M; kết quả WeChat (không báo version) phải có 25 ô, đếm qua đường timing; tâm mã phải nằm trong vùng đang đọc, nới 15% (chặn đọc nhầm tem bên cạnh). Mã bị loại ghi log `code_rejected` kèm lý do và không tính phiếu. Kết quả bộ đọc nền cũng qua lọc nội dung.
 

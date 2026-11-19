@@ -30,6 +30,7 @@ from ultralytics.nn.tasks import DetectionModel  # noqa: E402
 MODELS = os.path.join(ROOT, "qr", "models")
 OUT_PT = os.path.join(MODELS, "qrdet_n_detect.pt")
 OUT_ONNX = os.path.join(MODELS, "qrdet_n_detect.onnx")
+OUT_SEG_ONNX = os.path.join(MODELS, "qrdet_n_seg.onnx")      # để so sánh (tools/bench_detector.py), không commit
 DEFAULT_CHECK_DIR = os.path.join(os.path.dirname(ROOT), "..", "..", "data", "field", "raw")
 
 
@@ -104,13 +105,13 @@ def check(seg_path: str, det_path: str, files: list[str], imgsz: int = 1280) -> 
     return ok
 
 
-def export_onnx(det_path: str, opset: int = 12) -> str:
-    out = YOLO(det_path, task="detect").export(format="onnx", opset=opset, dynamic=True, simplify=True,
-                                                imgsz=640, device="cpu")
-    if os.path.abspath(out) != os.path.abspath(OUT_ONNX):
-        os.replace(out, OUT_ONNX)
-    print("xuất", OUT_ONNX)
-    return OUT_ONNX
+def export_onnx(pt_path: str, opset: int = 12, task: str = "detect", dest: str = OUT_ONNX) -> str:
+    out = YOLO(pt_path, task=task).export(format="onnx", opset=opset, dynamic=True, simplify=True,
+                                          imgsz=640, device="cpu")
+    if os.path.abspath(out) != os.path.abspath(dest):
+        os.replace(out, dest)
+    print("xuất", dest)
+    return dest
 
 
 def main():
@@ -118,8 +119,15 @@ def main():
     ap.add_argument("--check-dir", default=DEFAULT_CHECK_DIR, help="thư mục chứa frame_*.tiff (tìm đệ quy)")
     ap.add_argument("--check-n", type=int, default=20)
     ap.add_argument("--opset", type=int, default=12)
+    ap.add_argument("--seg", action="store_true",
+                    help="xuất thêm chính qrdet-n seg sang qr/models/qrdet_n_seg.onnx (đầu ra 0 có hộp + hệ số mask)")
     args = ap.parse_args()
     seg_path = qrdet_weights("n")
+    if args.seg:
+        import shutil
+        tmp = os.path.join(MODELS, "qrdet_n_seg.pt")
+        shutil.copyfile(seg_path, tmp)          # export ghi cạnh file .pt: không ghi vào site-packages
+        export_onnx(tmp, args.opset, task="segment", dest=OUT_SEG_ONNX)
     save(convert(seg_path), OUT_PT)
     files = sorted(glob.glob(os.path.join(args.check_dir, "**", "frame_*.tiff"), recursive=True))
     if files:

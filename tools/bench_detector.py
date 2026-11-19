@@ -86,6 +86,14 @@ def band(image, y_center):
     return image[y:y + BAND_H]
 
 
+EDGE_PX = 3      # như PassReader._gated / pass_fallback.make_obs: QR chạm mép bị bỏ qua nên không tính
+
+
+def usable(box, shape):
+    h, w = shape[:2]
+    return box[0] > EDGE_PX and box[1] > EDGE_PX and box[2] < w - EDGE_PX and box[3] < h - EDGE_PX
+
+
 def iou(a, b):
     x1, y1 = max(a[0], b[0]), max(a[1], b[1])
     x2, y2 = min(a[2], b[2]), min(a[3], b[3])
@@ -93,14 +101,66 @@ def iou(a, b):
     return inter / ((a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter + 1e-9)
 
 
-def make_variants(scales, threads):
-    yield "qrdet-s seg torch 1280 (mốc)", lambda: QRDetector("s", conf_th=0.3, imgsz=1280, device="cpu")
-    yield "qrdet-n seg torch 1280", lambda: QRDetector("n", conf_th=0.3, imgsz=1280, device="cpu")
-    for backend in ("onnxruntime", "openvino"):
-        for s in scales:
-            yield f"n-detect {backend} ×{s}", (lambda b=backend, s=s: OnnxQRDetector(scale=s, backend=b))
-        if threads:
-            s = scales[len(scales) // 2]
+MODELS = os.path.join(ROOT, "qr", "models")
+DETECT_PT = os.path.join(MODELS, "qrdet_n_detect.pt")
+SEG_ONNX = os.path.join(MODELS, "qrdet_n_seg.onnx")
+
+
+def imgsz_for(shape, scale):
+    """imgsz của ultralytics (cạnh dài sau khi thu) ứng với tỉ lệ thu ``scale`` của ảnh ``shape``. Tính theo từng ảnh:
+    frame phòng thí nghiệm rộng 1792 px, dải hiện trường 2856 px — imgsz cố định sẽ thu hai loại khác nhau."""
+    return max(32, int(round(max(shape[:2]) * scale / 32)) * 32)
+
+
+class TorchYolo:
+    """YOLOv8n detect (``qrdet_n_detect.pt``) qua ultralytics ở cùng tỉ lệ thu — để tách ảnh hưởng của runtime
+    (ONNX/OpenVINO, tiền xử lý riêng) khỏi ảnh hưởng của việc bỏ nhánh mask."""
+
+    def __init__(self, path, scale):
+        from ultralytics import YOLO
+        self.model, self.scale = YOLO(path, task="detect"), scale
+
+    def warmup(self, shape):
+        self.detect(np.zeros((shape[0], shape[1], 3), np.uint8))
+
+    def detect(self, image):
+        from qr.detection import Detection
+        r = self.model.predict(image, imgsz=imgsz_for(image.shape, self.scale), conf=0.3, iou=0.3,
+                               agnostic_nms=True, max_det=100, verbose=False, device="cpu")[0]
+        return [Detection(b.astype(np.float32), None, float(c)) for b, c in
+                zip(r.boxes.xyxy.cpu().numpy(), r.boxes.conf.cpu().numpy())]
+
+
+class ScaledQRDetector(QRDetector):
+    """qrdet seg trên torch nhưng imgsz theo tỉ lệ thu của từng ảnh (QRDetector gốc dùng imgsz cố định)."""
+
+    def __init__(self, size, scale):
+        super().__init__(size, conf_th=0.3, imgsz=640, device="cpu")
+        self.scale = scale
+
+    def detect(self, image_bgr):
+        self._imgsz = imgsz_for(image_bgr.shape, self.scale)
+        return super().detect(image_bgr)
+
+
+def make_variants(scales, threads, groups):
+    """groups: tập con của {"base", "seg-torch", "det-torch", "seg-onnx", "det-onnx"}."""
+    if "base" in groups:
+        yield "qrdet-s seg torch 1280 (mốc)", lambda: QRDetector("s", conf_th=0.3, imgsz=1280, device="cpu")
+    for s in scales:
+        if "seg-torch" in groups:
+            yield f"qrdet-n seg torch ×{s}", (lambda s=s: ScaledQRDetector("n", s))
+        if "det-torch" in groups and os.path.isfile(DETECT_PT):
+            yield f"n-detect torch ×{s}", (lambda s=s: TorchYolo(DETECT_PT, s))
+        for backend in ("onnxruntime", "openvino"):
+            if "seg-onnx" in groups and os.path.isfile(SEG_ONNX):
+                yield (f"qrdet-n seg {backend} ×{s}",
+                       lambda b=backend, s=s: OnnxQRDetector(SEG_ONNX, scale=s, backend=b))
+            if "det-onnx" in groups:
+                yield f"n-detect {backend} ×{s}", (lambda b=backend, s=s: OnnxQRDetector(scale=s, backend=b))
+    if threads and "det-onnx" in groups:
+        s = scales[len(scales) // 2]
+        for backend in ("onnxruntime", "openvino"):
             yield (f"n-detect {backend} ×{s} {threads} luồng",
                    lambda b=backend, s=s: OnnxQRDetector(scale=s, backend=b, threads=threads))
 
@@ -121,8 +181,10 @@ def main():
     ap.add_argument("--per-pass", type=int, default=40)
     ap.add_argument("--per-glass", type=int, default=15)
     ap.add_argument("--per-empty", type=int, default=5)
-    ap.add_argument("--scales", default="0.5,0.6,0.75")
-    ap.add_argument("--threads", type=int, default=4, help="thêm một phương án giới hạn số luồng (0 = bỏ)")
+    ap.add_argument("--scales", default="0.45,0.6,0.75")
+    ap.add_argument("--threads", type=int, default=0, help="thêm một phương án giới hạn số luồng (0 = bỏ)")
+    ap.add_argument("--groups", default="base,seg-torch,det-torch,seg-onnx,det-onnx",
+                    help="nhóm phương án: base (qrdet-s), seg-torch, det-torch, seg-onnx (cần --seg khi xuất), det-onnx")
     ap.add_argument("--out", default=os.path.join(ROOT, "experiments", "out"))
     args = ap.parse_args()
     data = args.data or find_data()
@@ -138,7 +200,7 @@ def main():
 
     results = {}
     ref = None
-    for name, factory in make_variants(scales, args.threads):
+    for name, factory in make_variants(scales, args.threads, set(args.groups.split(","))):
         det = factory()
         det.warmup(images[0].shape[:2])
         boxes, ms = run(det, images)
@@ -152,9 +214,13 @@ def main():
         passes[picked[i][2]].append(i)
     lines = [f"# So bộ phát hiện QR — {datetime.date.today().isoformat()}", "",
              f"Dữ liệu: `{data}`; {len(pos)} frame có tem ({len(passes)} đoạn), {len(neg)} frame không có tem; dải "
-             f"{BAND_H} hàng quanh tem (frame phòng thí nghiệm 992 hàng giữ nguyên). CPU, mốc = qrdet-s seg imgsz 1280.", "",
+             f"{BAND_H} hàng quanh tem (frame phòng thí nghiệm 992 hàng giữ nguyên). CPU; mốc = phương án đầu bảng; "
+             f"không tính hộp chạm mép ảnh (≤{EDGE_PX} px, sản phẩm bỏ qua). Tỉ lệ ×s áp cho cạnh dài của từng ảnh.", "",
              "| Bộ phát hiện | recall | lượt | thêm | nhầm | ms p50 | ms p95 |", "|---|---:|---:|---:|---:|---:|---:|"]
+    shapes = [img.shape for img in images]
+    ref = [[b for b in bs if usable(b, shapes[i])] for i, bs in enumerate(ref)]
     for name, (boxes, ms) in results.items():
+        boxes = [[b for b in bs if usable(b, shapes[i])] for i, bs in enumerate(boxes)]
         hit = total = extra = 0
         seg_ok = 0
         for key, idxs in passes.items():

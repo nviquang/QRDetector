@@ -37,3 +37,4 @@ data/
 
 # Checkpoint trung gian của tools/export_qrdet_detect.py (chỉ commit bản ONNX)
 qr/models/*.pt
+qr/models/qrdet_n_seg.onnx
