@@ -14,7 +14,7 @@ sys.path.insert(0, str(ROOT))
 
 from qr.improved_pipeline import Decoded  # noqa: E402
 from qr.pass_reader import PassReader  # noqa: E402
-from qr.tracker import PassTracker  # noqa: E402
+from qr.tracker import PassTracker, Track  # noqa: E402
 from tests.qr_fixtures import detection_at  # noqa: E402
 
 IMG = np.zeros((768, 2448, 3), np.uint8)
@@ -285,6 +285,14 @@ class BlurLengthTests(unittest.TestCase):
 
     def test_short_blur_is_not_deblurred(self):
         self.assertEqual(self.full_job(1.0), [])
+
+    def test_field_exposure_2ms_at_fastest_belt_skips_wiener(self):
+        # 120 mm/s ở 0,525 mm/px ≈ 229 px/s; 15 seq/s → 15,2 px/seq; vệt 229 × 0,002 ≈ 0,46 px < MIN_BLUR_PX
+        reader, *_ = make_reader(moving(1), [None])
+        reader.set_exposure_ms(2.0)
+        reader._seq_rate = 15.0
+        t = Track(1, 0, 0, (0.0, 0.0), 57.0, velocity=(0.0, 229.0 / 15.0), observations=3)
+        self.assertEqual(reader._blur_lengths(t), [])
 
     def test_unknown_exposure_tries_common_lengths(self):
         self.assertEqual(self.full_job(None), [2.0, 3.0, 4.5, 6.5])

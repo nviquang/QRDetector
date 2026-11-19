@@ -11,7 +11,8 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from demo_ui.app_settings import AppSettings  # noqa: E402
+from camera.conveyor import align_band  # noqa: E402
+from demo_ui.app_settings import AppSettings, BaslerSettings, ReplaySettings  # noqa: E402
 
 
 class AppSettingsTests(unittest.TestCase):
@@ -57,6 +58,16 @@ class AppSettingsTests(unittest.TestCase):
 
     def test_defaults_give_a_bright_enough_image(self):
         self.assertEqual((AppSettings().exposure_ms, AppSettings().analog_gain), (12.9, 40))
+
+    def test_basler_defaults_match_field_constraints(self):
+        s = BaslerSettings()
+        self.assertEqual((s.exposure_ms, s.analog_gain), (2.0, 6))
+        self.assertEqual((s.band_enabled, s.band_y, s.band_h), (True, 880, 1072))
+        self.assertEqual(align_band(s.band_y, s.band_h, 2848), (880, 1072))   # đã căn bội 16, nằm trong sensor
+
+    def test_replay_keeps_full_frame_for_old_recordings(self):
+        self.assertFalse(ReplaySettings().band_enabled)
+        self.assertEqual(ReplaySettings().exposure_ms, 2.0)
 
     def test_decode_every_n_defaults_to_5_and_round_trips(self):
         self.assertEqual(AppSettings().decode_every_n, 5)

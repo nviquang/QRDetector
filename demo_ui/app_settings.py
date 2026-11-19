@@ -120,16 +120,24 @@ class AppSettings:
 
 @dataclass
 class BaslerSettings(AppSettings):
-    """Mặc định cho camera Basler a2A2840-48umBAS: gain tính bằng dB, sensor 2856×2848."""
+    """Mặc định cho camera Basler a2A2840-48umBAS ở hiện trường (README, mục Bài toán và ràng buộc): gain tính bằng
+    dB, sensor 2856×2848. Exposure 2 ms giữ vệt mờ ≤0,24 mm (~0,43 px) ở 120 mm/s; dải y 1072 hàng ở giữa sensor
+    ứng với buồng tối 60 cm ở ~0,56 mm/px (căn bội 16) — chỉnh lại theo vị trí buồng tối thật khi lắp đặt."""
+    exposure_ms: float = 2.0
     analog_gain: int = 6
+    band_enabled: bool = True
+    band_y: int = 880
+    band_h: int = 1072
     band_w: int = 2840
 
 
 @dataclass
 class ReplaySettings(BaslerSettings):
     """Bản phát lại dữ liệu đã ghi (main_replay.py): mặc định KHÔNG gửi mã lên server — mã từ dữ liệu cũ không
-    được lẫn vào số liệu thật; camera_serial lưu tên lần ghi."""
+    được lẫn vào số liệu thật; camera_serial lưu tên lần ghi. Dữ liệu cũ quay toàn khung, tem ở mọi vị trí nên
+    mặc định không cắt dải."""
     upload_enabled: bool = False
+    band_enabled: bool = False
 
 
 @dataclass
