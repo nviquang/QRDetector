@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SETTINGS_PATH = ROOT / "config" / "app_settings.json"
 BASLER_SETTINGS_PATH = ROOT / "config" / "basler_settings.json"
 DUAL_SETTINGS_PATH = ROOT / "config" / "dual_settings.json"
+REPLAY_SETTINGS_PATH = ROOT / "config" / "replay_settings.json"
 
 
 def _is_int(lo: int, hi: int):
@@ -122,6 +123,13 @@ class BaslerSettings(AppSettings):
     """Mặc định cho camera Basler a2A2840-48umBAS: gain tính bằng dB, sensor 2856×2848."""
     analog_gain: int = 6
     band_w: int = 2840
+
+
+@dataclass
+class ReplaySettings(BaslerSettings):
+    """Bản phát lại dữ liệu đã ghi (main_replay.py): mặc định KHÔNG gửi mã lên server — mã từ dữ liệu cũ không
+    được lẫn vào số liệu thật; camera_serial lưu tên lần ghi."""
+    upload_enabled: bool = False
 
 
 @dataclass

@@ -75,7 +75,7 @@ class DecodeWorker(BaseDecodeWorker):
             self._flushes.append(purpose)
 
     def _emit_flush(self, purpose: str):
-        tracks = self._reader.flush()
+        tracks = self._reader.flush(on_fallback=self.fallback.emit)   # chờ đọc nền: vẫn báo B → C
         late = self._reader.take_late_reads()   # đọc nền xong đúng lúc chốt: báo mã trước khi chốt lượt
         if late and purpose != FLUSH_RESET:
             self.reads.emit(late)

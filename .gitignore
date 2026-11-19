@@ -31,3 +31,6 @@ desktop.ini
 .claude/worktrees/
 .claude/settings.local.json
 experiments/out/
+
+# ── Dữ liệu hiện trường đã làm sạch (hard link tới TIFF gốc) ─────────────────
+data/

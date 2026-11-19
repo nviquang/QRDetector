@@ -32,6 +32,7 @@ YOLO_EVERY_S = 0.4          # giữa hai lần YOLO chạy job đoán vị trí 
 FAST_EVERY_N = 2            # nhịp gửi frame khi có lượt chờ đọc
 UNKNOWN_EXPOSURE_BLUR_PX = [2.0, 3.0, 4.5, 6.5]
 MIN_BLUR_PX = 1.5
+DRAIN_STEP_S = 0.25     # flush chờ bộ đọc nền từng quãng này để báo giai đoạn mới
 
 
 @dataclass
@@ -212,14 +213,15 @@ class PassReader:
         return FrameResult(detections, texts, overlays, skipped,
                            (t1 - t0) * 1000.0, (t2 - t1) * 1000.0, finished, first_reads)
 
-    def flush(self) -> list[Track]:
-        """Đóng mọi lượt đang mở (dừng decode / đóng app)."""
+    def flush(self, on_fallback=None) -> list[Track]:
+        """Đóng mọi lượt đang mở (dừng decode / đóng app). on_fallback(list[FallbackStatus]): gọi khi trạng thái
+        đọc nền đổi trong lúc chờ bộ giải (để giao diện hiện B → C)."""
         self._last_idx = self._shape = self._last_seen = None
         self._last_yolo_t = float("-inf")
         self._last_overlays = []
         self._awaiting_read = False
         finished = self._close(self._tracker.finish())
-        finished += self._drain_fallback()
+        finished += self._drain_fallback(on_fallback)
         self._fallback_mark = ((), getattr(self._fallback, "revision", 0))   # người gọi tự xóa trạng thái cũ
         return finished
 
@@ -379,10 +381,23 @@ class PassReader:
             done.append(t)
         return done
 
-    def _drain_fallback(self) -> list[Track]:
+    def _drain_fallback(self, on_fallback=None) -> list[Track]:
+        """Chờ bộ đọc nền tối đa FLUSH_WAIT_S. Chờ từng quãng ngắn để báo giai đoạn (B → C) qua ``on_fallback`` —
+        lúc này không có frame nào đi qua ``process`` nên giao diện không tự biết trạng thái mới."""
         if not self._held:
             return []
-        done = self._resolve(self._fallback.wait(pass_fallback.FLUSH_WAIT_S))
+        done: list[Track] = []
+        deadline = time.monotonic() + pass_fallback.FLUSH_WAIT_S
+        while self._held:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            done += self._resolve(self._fallback.wait(min(DRAIN_STEP_S, remaining)))
+            changes = self._fallback_changes()
+            if changes is not None and on_fallback is not None:
+                on_fallback(changes)
+            if not getattr(self._fallback, "pending", 0):
+                break
         for t in self._held.values():
             logger.info("pass_fallback_abandoned id=%d", t.track_id)
             self._log_finished(t)

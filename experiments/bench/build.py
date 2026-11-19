@@ -36,6 +36,16 @@ EDGE = 3          # bỏ detection chạm mép ảnh: QR có thể bị cắt
 GATE = 22.0       # px dịch tối đa giữa 2 frame liền nhau khi nối lượt
 
 
+def clip_files(name):
+    """Thư mục pylon <data>/<name>/*.tiff, hoặc bố cục data/field/raw/<tiền tố>_lab_<name>/frame_*.tiff
+    (tools/clean_field_data.py; 06/11 các clip gan/xa/cheo đã chuyển vào đây và thư mục gốc bị xóa)."""
+    old = sorted(glob.glob(os.path.join(args.data, name, "*.tiff")))
+    if old:
+        return old
+    raw = os.path.join(args.data, "data", "field", "raw") if os.path.isdir(os.path.join(args.data, "data")) else args.data
+    return sorted(glob.glob(os.path.join(raw, f"*_lab_{name}", "frame_*.tiff")))
+
+
 def detect_all(name, files):
     path = os.path.join(args.out, f"dets_{name}.pkl")
     if os.path.exists(path):
@@ -89,7 +99,7 @@ def main():
     all_tracks = []
     pipe = ImprovePipeline(detector=object(), multi_frame=False)
     for name in args.clips.split(","):
-        files = sorted(glob.glob(os.path.join(args.data, name, "*.tiff")))
+        files = clip_files(name)
         dets = detect_all(name, files)
         tracks = make_tracks(dets)
         tracks.sort(key=lambda t: t[0][0])

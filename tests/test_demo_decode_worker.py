@@ -125,9 +125,9 @@ class DecodeWorkerTests(unittest.TestCase):
         threads = []
         original_flush = worker._reader.flush
 
-        def flush():
+        def flush(**kwargs):
             threads.append(threading.current_thread())
-            return original_flush()
+            return original_flush(**kwargs)
         worker._reader.flush = flush
         with worker._lock:                       # giữ khóa để frame và yêu cầu chốt cùng vào một vòng
             worker._pending = (FRAME, 1)
@@ -138,6 +138,20 @@ class DecodeWorkerTests(unittest.TestCase):
         self.assertEqual(threads, [worker._thread])
         self.assertIsNone(worker._pending)
         self.assertEqual(pipe.warmups, 1)
+
+    def test_flush_forwards_fallback_stages_before_clearing(self):
+        """Trong lúc chốt lượt chờ đọc nền, giai đoạn mới (B → C) vẫn tới giao diện, sau cùng mới là danh sách rỗng."""
+        worker = self.make(FakePipeline())
+        emitted = []
+        worker.fallback.connect(lambda statuses: emitted.append([s.stage for s in statuses]))
+
+        def flush(on_fallback=None):
+            from qr.pass_reader import FallbackStatus
+            on_fallback([FallbackStatus(3, "C", 1.0, 0)])
+            return []
+        worker._reader.flush = flush
+        worker.request_flush("stop")
+        self.assertEqual(emitted, [["C"], []])
 
     def test_submit_keeps_seq_with_frame(self):
         worker = self.make(FakePipeline())

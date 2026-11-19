@@ -71,6 +71,26 @@ class FakeFallback:
         self.revision += 1
 
 
+class ScriptedFallback(FakeFallback):
+    """Mỗi lần ``wait`` chạy một bước kịch bản (bộ giải đổi giai đoạn / trả kết quả); ``pending`` như PassFallback."""
+
+    def __init__(self, script):
+        super().__init__()
+        self.script = list(script)
+
+    @property
+    def pending(self):
+        return len(self.pending_keys)
+
+    def wait(self, timeout):
+        if self.script:
+            self.script.pop(0)(self)
+        done = self.poll()
+        for key, *_ in done:
+            self.pending_keys.discard(key)
+        return done
+
+
 class Harness:
     def __init__(self, fallback):
         self.pipe = FakePipeline()
@@ -169,6 +189,25 @@ class ReaderHoldTest(unittest.TestCase):
         h.reader.flush()
         self.assertIsNone(h.step([]).fallback)            # người gọi flush tự xóa trạng thái
         self.assertEqual(h.reader.fallback_status(), [])
+
+    def test_flush_reports_stage_changes_while_waiting(self):
+        """Chốt lượt lúc Dừng/hết dữ liệu: bộ giải sang C trong lúc flush chờ thì vẫn phải báo, không đứng ở B."""
+        fallback = ScriptedFallback([lambda f: f.start(0, "C"), lambda f: f.finish(0, None)])
+        h = Harness(fallback)
+        h.run_pass()
+        fallback.start(0, "B")
+        h.step([])
+        seen = []
+        tracks = h.reader.flush(on_fallback=seen.append)
+        self.assertEqual([[s.stage for s in st] for st in seen], [["C"], []])
+        self.assertEqual(len(tracks), 1)
+        self.assertEqual(fallback.discarded, 1)
+
+    def test_flush_without_callback_still_waits_for_answer(self):
+        fallback = ScriptedFallback([lambda f: f.start(0, "C"), lambda f: f.finish(0, "LATE")])
+        h = Harness(fallback)
+        h.run_pass()
+        self.assertEqual([t.text for t in h.reader.flush()], ["LATE"])
 
     def test_short_pass_is_not_sent(self):
         fallback = FakeFallback()
