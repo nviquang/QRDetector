@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 
+import cv2
 import numpy as np
 
 CODE_PATTERN = r"[0-9]+#[0-9]+"   # [0-9] chứ không \d: \d khớp cả chữ số Unicode (１２…)
@@ -42,6 +43,52 @@ def symbol_ok(result, expected: tuple[str, str] | None = EXPECTED_SYMBOL) -> boo
     if expected is None:
         return True
     return symbol_of(result) == tuple(expected)
+
+
+SIZES = (21, 25, 29, 33)          # số ô mỗi cạnh của version 1–4
+_WARP = 240
+
+
+def module_count(gray: np.ndarray, corners, sizes=SIZES) -> tuple[int | None, float]:
+    """Ước số ô mỗi cạnh từ đường timing (hàng/cột 6, đen-trắng xen kẽ giữa hai finder) của mã có 4 góc ``corners``.
+
+    Dùng cho decoder không trả version (WeChat). Không biết góc nào là góc finder nên thử cả 4 hướng; mỗi kích thước N
+    lấy điểm tương quan tốt nhất giữa vạch timing đo được và mẫu xen kẽ. Trả (N tốt nhất, điểm); điểm < 0,3 là không rõ.
+    """
+    src = np.asarray(corners, np.float32).reshape(4, 2)
+    dst = np.float32([[0, 0], [_WARP, 0], [_WARP, _WARP], [0, _WARP]])
+    try:
+        warped = cv2.warpPerspective(gray, cv2.getPerspectiveTransform(src, dst), (_WARP, _WARP),
+                                     flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE).astype(np.float32)
+    except cv2.error:
+        return None, 0.0
+    best_n, best = None, -1.0
+    for n in sizes:
+        k = np.arange(8, n - 8)
+        if len(k) < 3:
+            continue
+        expect = np.where(k % 2 == 0, -1.0, 1.0)          # ô chẵn đen
+        pos = (k + 0.5) * _WARP / n
+        line = 6.5 * _WARP / n
+        r = max(1, int(_WARP / n / 4))
+        for img in (warped, np.rot90(warped, 1), np.rot90(warped, 2), np.rot90(warped, 3)):
+            for prof in (np.array([img[int(line) - r:int(line) + r + 1, int(p) - r:int(p) + r + 1].mean() for p in pos]),
+                         np.array([img[int(p) - r:int(p) + r + 1, int(line) - r:int(line) + r + 1].mean() for p in pos])):
+                sd = prof.std()
+                if sd < 1e-6:
+                    continue
+                score = float(np.mean((prof - prof.mean()) / sd * expect))
+                if score > best:
+                    best_n, best = n, score
+    return best_n, best
+
+
+def size_ok(gray, corners, expected: tuple[str, str] | None = EXPECTED_SYMBOL, min_score: float = 0.3) -> bool:
+    """Mã (từ decoder không báo version) có số ô khớp version mong đợi. ``expected=None`` = không kiểm tra."""
+    if expected is None:
+        return True
+    n, score = module_count(gray, corners)
+    return n == 17 + 4 * int(expected[0]) and score >= min_score
 
 
 def inside(corners, bbox, margin: float = POSITION_MARGIN) -> bool:

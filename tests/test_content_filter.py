@@ -85,6 +85,19 @@ class PassDecoderFilterTests(unittest.TestCase):
             hit = PassDecoder(CODE_PATTERN, symbol=EXPECTED_SYMBOL).read(frame, bbox, None, None, [])
         self.assertIsNone(hit)
 
+    def test_wechat_read_of_v1_code_is_rejected_by_module_count(self):
+        frame, bbox = frame_with(qr_image("12#34", 3, version=1, level="L"))
+        with mock.patch.object(multiframe, "read_zxing_gray", return_value=None), \
+                self.assertLogs("solution.qr", "WARNING") as logs:
+            self.assertIsNone(PassDecoder(CODE_PATTERN, symbol=EXPECTED_SYMBOL).read(frame, bbox, None, None, []))
+        self.assertIn("số ô", "\n".join(logs.output))
+
+    def test_wechat_read_of_v2m_code_passes_module_count(self):
+        frame, bbox = frame_with(qr_image(FIELD_CODE, 3, version=2, level="M"))
+        with mock.patch.object(multiframe, "read_zxing_gray", return_value=None):
+            hit = PassDecoder(CODE_PATTERN, symbol=EXPECTED_SYMBOL).read(frame, bbox, None, None, [])
+        self.assertEqual(hit.text, FIELD_CODE)
+
     def test_code_outside_bbox_is_rejected_and_logged(self):
         frame, bbox = frame_with(qr_image(FIELD_CODE, 4, version=2, level="M"))
         far = np.array([[0, 0], [10, 0], [10, 10], [0, 10]], np.float32) + 2000   # tem bên cạnh

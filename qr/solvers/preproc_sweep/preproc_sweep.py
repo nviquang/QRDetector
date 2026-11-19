@@ -33,13 +33,15 @@ def _find_root():
 sys.path.insert(0, _find_root())
 
 from qr.decoder import read_wechat_gray  # noqa: E402
+from qr.content_filter import CODE_PATTERN, EXPECTED_SYMBOL, accept_text, inside, size_ok, symbol_ok  # noqa: E402
 from qr.detector import Detection  # noqa: E402
 from qr.multiframe import PassDecoder  # noqa: E402
-from qr.preprocessor import stretch_contrast, upscale_gray  # noqa: E402
+from qr.preprocessor import UPSCALE_PAD_PER_SCALE, stretch_contrast, upscale_gray  # noqa: E402
 from qr.tracker import Track  # noqa: E402
 
 ALL_STEPS = "photo,sweep,warp,stack,lsq,joint,dd"
-SIZES = (21, 25, 29, 33)
+DEFAULT_STEPS = "photo,sweep,warp"   # lsq/joint/stack/dd là bản yếu hơn của B (grid_sr) và tốn thời gian: tắt mặc định
+SIZES = (25,)                        # tem hiện trường: QR version 2 (README, mục Bài toán và ràng buộc)
 BLUR_FACTORS = (1.0, 0.94, 0.88, 0.82, 1.06)      # lệch về phía ngắn: ước lượng thiếu dễ chấp nhận hơn thừa
 UEC_MIN = 0.25                                    # phần sửa lỗi còn dư tối thiểu (V1-L: tối đa 2 ký tự lỗi, như ISO)
 ROTS_DEG = (-6.0, 0.0, 6.0)
@@ -48,31 +50,44 @@ GRID_FIT_MIN = 0.55
 
 # ── đọc bằng decoder có sẵn ────────────────────────────────────────────────────
 
-def zx(gray, binarizer=None, uec_min=UEC_MIN):
-    """zxing, chỉ nhận mã còn dư sửa lỗi: trả text hoặc None."""
+def zx_hit(gray, binarizer=None, uec_min=UEC_MIN):
+    """zxing, chỉ nhận mã V2-M còn dư sửa lỗi và đúng định dạng: trả (text, 4 góc trong tọa độ ``gray``) hoặc None."""
     opts = {} if binarizer is None else {"binarizer": binarizer}
     for b in zxingcpp.read_barcodes(gray, formats=zxingcpp.BarcodeFormat.QRCode, try_rotate=True, **opts):
-        if b.valid and b.text:
+        if b.valid and b.text and symbol_ok(b, EXPECTED_SYMBOL) and accept_text(b.text, CODE_PATTERN):
             uec = b.extra.get("UEC", 1.0) if isinstance(b.extra, dict) else 1.0
             if uec >= uec_min:
-                return b.text
+                p = b.position
+                pts = np.array([[p.top_left.x, p.top_left.y], [p.top_right.x, p.top_right.y],
+                                [p.bottom_right.x, p.bottom_right.y], [p.bottom_left.x, p.bottom_left.y]], np.float32)
+                return b.text, pts
     return None
+
+
+def zx(gray, binarizer=None, uec_min=UEC_MIN):
+    hit = zx_hit(gray, binarizer, uec_min)
+    return hit[0] if hit else None
 
 
 BINS = (None, zxingcpp.Binarizer.GlobalHistogram)
 
 
-def read_any(gray, wechat=True):
-    """zxing hai binarizer rồi WeChat CNN trên ảnh đã phóng to."""
+def read_any_hit(gray, wechat=True):
+    """zxing hai binarizer rồi WeChat CNN trên ảnh đã phóng to: (text, 4 góc trong tọa độ ``gray``) hoặc None."""
     for bz in BINS:
-        t = zx(gray, bz)
-        if t:
-            return t
+        hit = zx_hit(gray, bz)
+        if hit:
+            return hit
     if wechat:
         hit = read_wechat_gray(gray, use_cnn=True)
-        if hit:
-            return hit[0]
+        if hit and accept_text(hit[0], CODE_PATTERN) and size_ok(gray, hit[1], EXPECTED_SYMBOL):   # WeChat không báo version
+            return hit
     return None
+
+
+def read_any(gray, wechat=True):
+    hit = read_any_hit(gray, wechat)
+    return hit[0] if hit else None
 
 
 # ── PSF ───────────────────────────────────────────────────────────────────────
@@ -222,7 +237,7 @@ def find_triples(g, o, psf):
     X2, Y2 = int(min(w, x2 + m_ext)), int(min(h, y2 + m_ext))
     roi = np.float32(g[Y1:Y2, X1:X2])
     peaks = []
-    for m in np.geomspace(side / 33 * 0.92, side / 21 * 1.08, 9):
+    for m in np.geomspace(side / max(SIZES) * 0.85, side / min(SIZES) * 1.2, 7):
         for d in ROTS_DEG:
             th = a0 + np.deg2rad(d)
             tmpl, mask = finder_template(m, th, psf)
@@ -506,7 +521,7 @@ def render_hard(M, s=8, q=4):
 # ── phương pháp ────────────────────────────────────────────────────────────────
 
 class PreprocSweep:
-    def __init__(self, steps=ALL_STEPS, deblur="wiener", need=2, debug=False):
+    def __init__(self, steps=DEFAULT_STEPS, deblur="wiener", need=2, debug=False):
         self.steps = set(s for s in steps.split(",") if s)
         self.deblur = deblur
         self.need = need
@@ -514,11 +529,14 @@ class PreprocSweep:
         self.log = []
 
     # từng bước đơn frame ----------------------------------------------------------
-    def _step_photo(self, g, mod_px):
+    def _step_photo(self, g, mod_px, bbox=None):
+        """Đọc cả crop sau chỉnh sáng/khử nhiễu. Decoder tự tìm mã nên có thể đọc trúng tem bên cạnh lọt vào crop:
+        chỉ nhận mã có tâm nằm trong ``bbox`` của tem đang đọc."""
+        pad = UPSCALE_PAD_PER_SCALE * 4
         for name, img in photo_variants(g, mod_px):
-            t = read_any(upscale_gray(img, 4))
-            if t:
-                return name, t
+            hit = read_any_hit(upscale_gray(img, 4))
+            if hit and inside((np.asarray(hit[1], np.float32) - pad) / 4, bbox):
+                return name, hit[0]
         return None
 
     def _deblur_candidates(self, g, ctx, grid):
@@ -715,11 +733,13 @@ class PreprocSweep:
         need = min(self.need, len(obs))
         votes = collections.Counter()
         read = [False] * len(obs)
-        dec = PassDecoder(None)
+        dec = PassDecoder(CODE_PATTERN, symbol=EXPECTED_SYMBOL)
         track = Track(track_id=1, first_frame=0, last_frame=0, center=(0.0, 0.0), size=1.0, velocity=ctx.velocity)
         blur = [ctx.blur_px] if ctx.blur_px >= 1.0 else []
 
         def vote(i, text):
+            if not accept_text(text, CODE_PATTERN):
+                return False
             votes[text] += 1
             read[i] = True
             return votes[text] >= need
@@ -747,7 +767,7 @@ class PreprocSweep:
         if "warp" in steps:
             single.append(("warp", lambda g, o, gr: self._step_warp(g, gr)))
         if "photo" in steps:
-            single.append(("photo", lambda g, o, gr: self._step_photo(g, rect_info(o)[1] / 23)))
+            single.append(("photo", lambda g, o, gr: self._step_photo(g, rect_info(o)[1] / 25, o.bbox)))
         if "sweep" in steps and ctx.blur_px >= 1.0:
             single.append(("sweep", lambda g, o, gr: self._step_sweep(g, ctx, gr)))
         if "lsq" in steps:

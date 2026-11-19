@@ -31,13 +31,26 @@ import numpy as np  # noqa: E402
 from grid_model import (Warp, FrameData, Fitter, Hypothesis, LAYOUTS, Solver, Template, build_matrix, corners_to_h,  # noqa: E402
                         fit_photometric, initial_fit, align_by_finders, motion_offsets, pixel_set, psf_points, transfer_corners)
 from qrspec import FORMAT_CODES, codeword_map, expand_blocks, format_info, pad_bytes, parse_payload, rs_decode  # noqa: E402
+from qr.content_filter import CODE_PATTERN, EXPECTED_SYMBOL, accept_text, inside  # noqa: E402
 from qr.detector import Detection  # noqa: E402
 from qr.multiframe import PassDecoder  # noqa: E402
 from qr.tracker import Track  # noqa: E402
 
 PAD_W = 8          # số byte yếu nhất được thử xóa theo mọi tổ hợp, khi đã giả thiết vùng đệm
 N_G = 5            # số điểm Gauss theo mỗi trục khi dựng ma trận PSF
-SIGMAS = (0.45, 0.6, 0.75, 0.95, 1.2)   # các σ quang học (px) thử trên ô chức năng
+SIGMA_GRID = (0.4, 0.7, 1.0, 1.3, 1.6, 1.9)   # lưới thô σ (px) theo mỗi trục, rồi tinh chỉnh quanh điểm tốt nhất
+SIGMA_STEP = 0.15
+VERSIONS = (2,)    # tem hiện trường: QR version 2 (README, mục Bài toán và ràng buộc) — chỉ nhận lời giải version này
+SEARCH_VERSIONS = (1, 2, 3)   # vẫn tìm giả thiết lưới V1–V3: đo trên lượt V2 tổng hợp, chỉ tìm V2 mất 2/8 lượt đọc được
+LEVEL_M = 0        # 2 bit mức sửa lỗi trong format: L=1, M=0, Q=3, H=2
+LEVELS = (LEVEL_M,)   # mức được xếp hạng ở fix_format
+MAX_ERASE = 10     # xóa tối đa trong Chase: xóa càng nhiều càng dễ "sửa" ra từ mã sai (16 xóa = mọi từ đều giải được)
+CHASE_W = 6
+RS_BUDGET = 12     # 2 × số lỗi + số xóa tối đa được chấp nhận (khối V2-M có 16 byte EC)
+MIN_FIT_NCC = -1.0  # NCC ô chức năng của giả thiết tốt nhất (đo: ca đọc được vẫn có thể âm) — không dùng để loại
+SIGMAS = (0.45, 0.6, 0.75, 0.95, 1.2)   # σ đẳng hướng thử theo NCC ô chức năng (SIGMA_MODE = "ncc")
+SIGMA_MODE = "fit"   # "fit": (σx, σy) theo phần dư mô hình (đo: 6/8 ca khó so với 5/8); "ncc": σ đẳng hướng như cũ
+SEARCH_CORNER = False  # V2 có ô alignment, refine đã neo góc 4; quét góc chỉ cho V1 (đo: bỏ không mất ca nào, nhanh hơn)
 WARP_K = 4         # số nút theo mỗi trục của trường biến dạng nhãn
 SEARCH_G = 4       # số điểm Gauss khi quét góc phải-dưới
 SEARCH_N = 3       # số frame dùng khi quét góc
@@ -113,8 +126,9 @@ class Recon:
 
     def fit_geometry(self):
         obs, offs = self.obs, self.offs
-        cands = initial_fit(obs, [offs] * len(obs))
-        if not cands:
+        cands = initial_fit(obs, [offs] * len(obs), versions=SEARCH_VERSIONS)
+        self.debug["fit_ncc"] = cands[0][0] if cands else None
+        if not cands or cands[0][0] < MIN_FIT_NCC:
             return False
         # giữ tối đa 4 giả thiết (mỗi (version, góc) một), chọn theo độ phân biệt của format
         pool, keys = [], set()
@@ -150,22 +164,60 @@ class Recon:
         self.corners = corners
         self.scores = scores
         self.pitch = float(np.linalg.norm(c[1] - c[0]) / n)
-        # chọn σ theo NCC ô chức năng trên frame tốt nhất
-        best_s, best_sc = SIGMAS[0], -2.0
-        fit = Fitter(obs[fi].gray, offs)
-        for sg in SIGMAS:
-            h2 = Hypothesis(v, sg / self.pitch)
-            t = fit.score(c, h2.tpl, h2.mask, n)
-            if t > best_sc:
-                best_s, best_sc = sg, t
-        self.sigma = best_s
-        self.score0 = best_sc
-        self.search_corner()
+        if SIGMA_MODE == "fit":
+            self.sigma_xy = self.estimate_sigma(fi)
+        else:
+            fit = Fitter(obs[fi].gray, offs)
+            best_s = max(SIGMAS, key=lambda sg: fit.score(c, Hypothesis(v, sg / self.pitch).tpl,
+                                                          Hypothesis(v, sg / self.pitch).mask, n))
+            self.sigma_xy = (best_s, best_s)
+        self.sigma = float(np.mean(self.sigma_xy))     # mẫu hình học (Template) dùng σ đẳng hướng
+        self.debug["sigma_xy"] = self.sigma_xy
+        self.score0 = scores[fi]
+        if self.version == 1 or SEARCH_CORNER:
+            self.search_corner()
         return True
+
+    def estimate_sigma(self, fi):
+        """(σx, σy) theo trục ảnh: cực tiểu phần dư mô hình trên pixel chỉ phụ thuộc ô đã biết của frame tốt nhất.
+        Lưới thô SIGMA_GRID² rồi dò từng bước SIGMA_STEP — thay cho 5 σ đẳng hướng cố định (mờ thật lệch trục)."""
+        o, c, n = self.obs[fi], self.corners[fi], self.n
+        gx, gy = pixel_set(c, n, o.gray.shape)
+        y = o.gray[gy, gx].astype(np.float64)
+        known = self.layout.known.ravel()
+        fixed = known >= 0
+        xfull = np.append(np.where(fixed, known, 0.5), 1.0)
+        memo = {}
+
+        def cost(sx, sy):
+            key = (round(sx, 3), round(sy, 3))
+            if key not in memo:
+                pts, wts = psf_points((sx, sy), self.offs, n_gauss=N_G)
+                A = build_matrix(c, n, gx, gy, pts, wts)
+                keep = A[:, :n * n].dot((~fixed).astype(float)) < 0.15
+                if keep.sum() < 80:
+                    memo[key] = np.inf
+                else:
+                    fr = FrameData(y=y, A=A, gx=gx.astype(np.float64), gy=gy.astype(np.float64))
+                    fit_photometric(fr, xfull, keep=keep)
+                    memo[key] = fr.sig2
+            return memo[key]
+
+        best = min(((sx, sy) for sx in SIGMA_GRID for sy in SIGMA_GRID), key=lambda p: cost(*p))
+        for _ in range(4):
+            sx, sy = best
+            cand = [(max(0.2, sx + dx), max(0.2, sy + dy)) for dx in (-SIGMA_STEP, 0, SIGMA_STEP)
+                    for dy in (-SIGMA_STEP, 0, SIGMA_STEP)]
+            nxt = min(cand, key=lambda p: cost(*p))
+            if nxt == best:
+                break
+            best = nxt
+        self.debug["sigma_xy"] = best
+        return best
 
     def build_frames(self):
         n = self.n
-        pts, wts = psf_points(self.sigma, self.offs, n_gauss=N_G)
+        pts, wts = psf_points(getattr(self, "sigma_xy", self.sigma), self.offs, n_gauss=N_G)
         self.frames = []
         self.valid = [i for i, s in enumerate(self.scores) if s > max(self.scores) - 0.25]
         if not self.valid:
@@ -262,7 +314,8 @@ class Recon:
         self.x = x
 
     def fix_format(self):
-        """Hợp lý cực đại 32 mã format trên cả hai bản, cố định ô format rồi giải lại."""
+        """Hợp lý cực đại các mã format trên cả hai bản. Tem là mức M nên chỉ xếp hạng 8 mã mức M (mask 0–7): khi ảnh
+        mờ, mã sai mức (thường là mã gần đảo bit) hay vượt mã đúng, ép mức đúng giữ được lời giải."""
         layout, n = self.layout, self.n
         L = self.sol.llr(self.x)
         idx = [fm[:, 0] * n + fm[:, 1] for fm in layout.fmt]
@@ -271,7 +324,8 @@ class Recon:
         for i, code in enumerate(wh):
             for ids in idx:
                 sc[i] += float(np.sum((2 * code - 1) * L[ids])) / 2
-        order = np.argsort(-sc)
+        allowed = np.array([i for i in range(32) if format_info(i)[0] in LEVELS])
+        order = allowed[np.argsort(-sc[allowed])]
         self.fmt_sc = sc[order]
         self.fmt_order = order
         return order, sc
@@ -328,31 +382,36 @@ def _byte_from_bits(v, cw, bit, ncw):
     return hard, rel, sums
 
 
-def chase_block(block_hard, rel, nsym, width=8, fixed_pos=None, limit=4000):
-    """Sinh các ứng viên RS bằng xóa các byte kém tin cậy nhất và mọi tổ hợp xóa của ``width`` byte yếu nhất."""
-    n = len(block_hard)
+def chase_block(block_hard, rel, nsym, width=CHASE_W, fixed_pos=None, limit=4000, max_erase=MAX_ERASE,
+                budget=RS_BUDGET):
+    """Sinh các ứng viên RS bằng xóa các byte kém tin cậy nhất và mọi tổ hợp xóa của ``width`` byte yếu nhất.
+
+    Giới hạn số xóa (``max_erase``) và ngân sách 2×lỗi + xóa (``budget``): với khối (44, 28), xóa 8 byte đã cho xác suất
+    "sửa" một từ rác thành từ mã hợp lệ khoảng 1e-5, xóa 16 byte thì mọi từ đều giải được."""
     cands = {}
     forb = set(fixed_pos or ())
     order = [i for i in np.argsort(rel) if i not in forb]
+    max_erase = min(nsym, max_erase)
     tries = 0
-    for j in range(0, nsym + 1):                     # xóa dần các byte yếu nhất (quan trọng khi nhiều byte EC)
-        r = rs_decode(list(block_hard), nsym, erase=order[:j])
-        if r is not None:
-            cands.setdefault(tuple(r[0]), (j, r[1]))
-    for size in range(0, min(nsym, width) + 1):
-        pool = order[:width]
-        combos = itertools.combinations(pool, size) if size <= len(pool) else []
-        for er in combos:
-            r = rs_decode(list(block_hard), nsym, erase=er)
+
+    def add(er):
+        r = rs_decode(list(block_hard), nsym, erase=er)
+        if r is not None and 2 * r[1] + len(er) <= budget:
+            cands.setdefault(tuple(r[0]), (len(er), r[1]))
+
+    for j in range(0, max_erase + 1):                # xóa dần các byte yếu nhất
+        add(order[:j])
+    pool = order[:width]
+    for size in range(0, min(max_erase, width) + 1):
+        for er in itertools.combinations(pool, size):
+            add(er)
             tries += 1
-            if r is not None:
-                cands[tuple(r[0])] = (len(er), r[1])
             if tries >= limit:
                 return cands
     return cands
 
 
-def decode_candidates(R, fmt, x_fmt, xb, sol, fixed, chase_w=8):
+def decode_candidates(R, fmt, x_fmt, xb, sol, fixed, chase_w=CHASE_W):
     """Trả (danh sách ứng viên RS-hợp lệ, chi phí cơ sở). Hỗ trợ nhiều khối: Chase từng khối, rồi tổ hợp."""
     layout, n = R.layout, R.n
     level, _ = format_info(fmt)
@@ -383,7 +442,8 @@ def decode_candidates(R, fmt, x_fmt, xb, sol, fixed, chase_w=8):
         for nb, kb, off in blocks:
             hb = [int(a) for a in h[off:off + nb]]
             fp = [a - off for a in known if off <= a < off + nb]
-            cs = chase_block(hb, rl[off:off + nb], nb - kb, width=(chase_w if not known else PAD_W) if len(blocks) == 1 else 6, fixed_pos=fp)
+            cs = chase_block(hb, rl[off:off + nb], nb - kb, width=(chase_w if not known else PAD_W) if len(blocks) == 1 else 6,
+                             fixed_pos=fp)
             ranked = []
             for d in cs:
                 dd = np.array(d, np.int32)
@@ -442,9 +502,17 @@ def read_recon(obs, ctx):
     R = Recon(obs, ctx)
     if not R.fit_geometry():
         return None, []
+    if R.version not in VERSIONS:          # lưới tốt nhất không phải V2: không phải tem cần đọc, khỏi giải
+        R.debug["version"] = R.version
+        return R, []
     R.build_frames()
     R.solve()
     order, sc = R.fix_format()
+    # Mã format mức M tốt nhất phải chênh rõ mã nhì (cổng cũng đòi điều này): không thì dừng trước bước giải mã tốn kém
+    fm0, fm1 = float(R.fmt_sc[0]), float(R.fmt_sc[1])
+    R.debug["format"] = (int(order[0]), fm0, fm1)
+    if fm0 <= 0 or fm0 < GATE_FM_MIN * max(fm1, 1.0):
+        return R, []
     out = []
     for fmt in order[:2]:
         x, xb, fixed, sol = R.apply_format(int(fmt))
@@ -455,12 +523,17 @@ def read_recon(obs, ctx):
     return R, out
 
 
-def gate(R, cs, hint, d_max=0.6, fl_max=0.085, gap_min=0.25, fm_min=1.4):
+GATE_FM_MIN = 1.4
+
+
+def gate(R, cs, hint, d_max=0.6, fl_max=0.085, gap_min=0.25, fm_min=GATE_FM_MIN, pattern=CODE_PATTERN):
     """Cổng chống báo sai dựa trên độ dư mô hình, số bit phải lật, tính hợp lệ của bản tin và đối thủ gần nhất.
 
     Điểm chuẩn hóa: d = (chi phí ứng viên − chi phí tự do) / độ chênh format tốt nhất, nên không phụ thuộc k và độ tương phản.
+    Nội dung phải khớp ``pattern``. Ứng viên sinh từ giả thiết byte đệm (tag pad…/Pad…) đã ghim chính các byte đệm nên
+    không dùng chúng làm bằng chứng, và chỉ được nhận ở nhánh ``strong``.
     """
-    valid = sorted((c for c in cs if c["parse"]), key=lambda c: c["dcost"])
+    valid = sorted((c for c in cs if c["parse"] and accept_text(c["parse"]["text"], pattern)), key=lambda c: c["dcost"])
     if not valid or R is None:
         return None
     fm0, fm1 = float(R.fmt_sc[0]), float(R.fmt_sc[1])
@@ -470,12 +543,14 @@ def gate(R, cs, hint, d_max=0.6, fl_max=0.085, gap_min=0.25, fm_min=1.4):
     p = top["parse"]
     ratio = top["dcost"] / fm0
     fl = top["flips"] / top["nbit"]
-    if p["npad"] and p["pad_good"] < p["npad"] - 1:
+    pinned = top["tag"].lower().startswith("pad")
+    if not pinned and p["npad"] and p["pad_good"] < p["npad"] - 1:
         return None
     rival = next((c for c in valid[1:] if c["parse"]["text"] != p["text"]), None)
     gap = (rival["dcost"] - top["dcost"]) / fm0 if rival else 9.9
     strong = ratio <= d_max and fl <= fl_max and gap >= gap_min
-    agrees = hint == p["text"] and ratio <= 2 * d_max and fl <= 1.4 * fl_max and gap >= 0.5 * gap_min
+    agrees = (not pinned and hint is not None and hint == p["text"] and accept_text(hint, pattern)
+              and ratio <= 2 * d_max and fl <= 1.4 * fl_max and gap >= 0.5 * gap_min)
     return p["text"] if strong or agrees else None
 
 
@@ -487,7 +562,7 @@ class GridSR:
     def read_pass(self, obs, ctx):
         need = min(2, len(obs))
         votes = collections.Counter()
-        dec = PassDecoder(None)
+        dec = PassDecoder(CODE_PATTERN, symbol=EXPECTED_SYMBOL)
         track = Track(track_id=1, first_frame=0, last_frame=0, center=(0.0, 0.0), size=1.0, velocity=ctx.velocity)
         blur = [ctx.blur_px] if ctx.blur_px >= 1.0 else []
         for o in (obs if self.baseline else []):
@@ -505,4 +580,13 @@ class GridSR:
             R, cs = read_recon(obs, ctx)
         except (ValueError, IndexError, np.linalg.LinAlgError, cv2.error, FloatingPointError):
             return None
-        return gate(R, cs, hint, **self.gate_kw)
+        text = gate(R, cs, hint, **self.gate_kw)
+        if text and not self._centered(R):
+            return None
+        return text
+
+    @staticmethod
+    def _centered(R):
+        """Lưới giải ra phải nằm quanh tem đang đọc (bbox của crop), không phải tem bên cạnh lọt vào crop."""
+        votes = [inside(R.corners[i], R.obs[i].bbox) for i in getattr(R, "valid", range(len(R.corners)))]
+        return sum(votes) * 2 > len(votes)

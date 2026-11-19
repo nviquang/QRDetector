@@ -416,7 +416,34 @@ def pixel_set(corners, n, shape, br_only=False):
 
 
 def psf_points(sigma_px, offs, n_gauss=5):
-    """Điểm mẫu và trọng số của PSF px = hộp pixel 1×1 ⊛ Gauss σ ⊛ đoạn vệt mờ."""
+    """Điểm mẫu và trọng số của PSF px = hộp pixel 1×1 ⊛ Gauss σ ⊛ đoạn vệt mờ.
+
+    sigma_px: một số (đẳng hướng) hoặc (σx, σy) theo trục ảnh — mờ quang học thật thường lệch hai trục."""
+    sx, sy = (sigma_px, sigma_px) if np.isscalar(sigma_px) else (float(sigma_px[0]), float(sigma_px[1]))
+    if sx == sy:
+        return _psf_points_iso(sx, offs, n_gauss)
+    px_, wx_ = _psf_axis(sx, n_gauss)
+    py_, wy_ = _psf_axis(sy, n_gauss)
+    dx, dy = np.meshgrid(px_, py_)
+    wx, wy = np.meshgrid(wx_, wy_)
+    w = (wx * wy).ravel()
+    px, py = dx.ravel(), dy.ravel()
+    allp = [np.stack([px + ox, py + oy], 1) for ox, oy in offs]
+    allw = [w / len(offs) for _ in offs]
+    return np.concatenate(allp), np.concatenate(allw)
+
+
+def _psf_axis(sigma, n_gauss):
+    """Điểm và trọng số 1 chiều cho hộp pixel ⊛ Gauss σ (phương sai σ² + 1/12)."""
+    s = np.sqrt(max(sigma, 0.0) ** 2 + 1.0 / 12.0)
+    t, wt = {5: ([-2.0, -1.0, 0.0, 1.0, 2.0], [1, 4, 6, 4, 1]), 4: ([-1.5, -0.5, 0.5, 1.5], [1, 3, 3, 1]),
+             3: ([-1.0, 0.0, 1.0], [1, 2, 1])}.get(n_gauss, ([-1.0, 1.0], [1.0, 1.0]))
+    t, wt = np.array(t, float), np.array(wt, float) / np.sum(wt)
+    var = (wt * t * t).sum()
+    return t * s / np.sqrt(var), wt
+
+
+def _psf_points_iso(sigma_px, offs, n_gauss=5):
     if sigma_px > 0.05:
         s = np.sqrt(sigma_px ** 2 + 1.0 / 12.0)
     else:

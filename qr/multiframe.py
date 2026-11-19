@@ -21,7 +21,7 @@ import cv2
 import numpy as np
 import zxingcpp
 
-from .content_filter import accept_text, inside
+from .content_filter import accept_text, inside, size_ok
 from .decoder import read_wechat_gray, read_zxing_gray
 from .improved_pipeline import Decoded, _warp_zxing_step
 from .preprocessor import UPSCALE_PAD_PER_SCALE, clahe, roi_bounds, stretch_contrast, upscale_gray
@@ -138,13 +138,16 @@ class PassDecoder:
                     hit = self._read_stacked(state, track, blur_lengths)
         return hit
 
-    def _accept(self, hit, to_frame) -> Decoded | None:
+    def _accept(self, hit, to_frame, image=None) -> Decoded | None:
+        """image: ảnh decoder vừa đọc, truyền khi decoder không báo version (WeChat) để đếm số ô qua đường timing."""
         if hit is None:
             return None
         text, pts = hit
         corners = to_frame(pts).astype(np.float32)
         if not accept_text(text, self._pattern):
             return self._reject(text, "sai định dạng, kiểm tra code_pattern nếu đây là mã thật")
+        if image is not None and not size_ok(image, pts, self._symbol):
+            return self._reject(text, "số ô không khớp version mong đợi")
         if not inside(corners, self._bbox):
             return self._reject(text, "tâm mã nằm ngoài vùng đang đọc (tem bên cạnh)")
         return Decoded(text, corners)
@@ -172,8 +175,8 @@ class PassDecoder:
         for preprocess, scale, cnn in _WECHAT_STEPS:
             source = gray if preprocess is None else preprocess(gray)
             pad = UPSCALE_PAD_PER_SCALE * scale
-            hit = self._accept(read_wechat_gray(upscale_gray(source, scale), use_cnn=cnn),
-                               lambda pts: (pts - pad) / scale + origin)
+            up = upscale_gray(source, scale)
+            hit = self._accept(read_wechat_gray(up, use_cnn=cnn), lambda pts: (pts - pad) / scale + origin, up)
             if hit:
                 return hit
         return None
@@ -216,4 +219,5 @@ class PassDecoder:
                 hit = self._accept(read_zxing_gray(pad(out), symbol=self._symbol), to_frame)
                 if hit:
                     return hit
-        return self._accept(read_wechat_gray(pad(stacked), use_cnn=True), to_frame)
+        padded = pad(stacked)
+        return self._accept(read_wechat_gray(padded, use_cnn=True), to_frame, padded)
