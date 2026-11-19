@@ -168,9 +168,32 @@ Cùng giao diện với bản demo bên dưới, dùng camera Basler (viết cho
 python main_basler.py
 ```
 
-Cấu hình lưu riêng ở `config/basler_settings.json`; gain tính bằng dB (mặc định 6 dB). Exposure mặc định trong code vẫn là 12,9 ms (thừa kế từ bản MindVision); ở 80–120 mm/s nên đặt **≤ 2,5 ms** trong tab Băng chuyền (xem mục Bài toán và ràng buộc). Kiểm tra nhanh camera: `python tools/test_basler.py --list`.
+Cấu hình lưu riêng ở `config/basler_settings.json`. Mặc định Basler: exposure **2 ms** (vệt mờ ≤ 0,43 px ở 120 mm/s), gain 6 dB, chỉ đọc dải y 880–1952 (1072 hàng, ứng với buồng tối 60 cm ở ~0,56 mm/px) — chỉnh dải theo vị trí buồng tối thật khi lắp đặt. File cấu hình đã lưu từ trước vẫn giữ giá trị cũ (ví dụ 12,9 ms): xóa file hoặc sửa trong tab Băng chuyền. Kiểm tra nhanh camera: `python tools/test_basler.py --list`.
 
-**Đọc nền cho QR khó:** lượt mà bộ đọc thường không đọc được được gửi sang một tiến trình riêng chạy bộ giải trong `qr/solvers` (tái tạo trên lưới ô `grid_sr`, rồi `preproc_sweep`). Lượt đó báo mã trễ khoảng 10–20 giây sau khi tem ra khỏi khung; lượt đọc được bình thường không bị trễ. Muốn chạy pipeline cũ để đối chiếu: đặt biến môi trường `QR_FALLBACK=off` trước khi chạy (PowerShell: `$env:QR_FALLBACK="off"`).
+**Bộ phát hiện** chọn bằng biến môi trường `QR_DETECTOR` (PowerShell: `$env:QR_DETECTOR="openvino"`):
+
+| `QR_DETECTOR` | Model | Cần |
+|---|---|---|
+| `qrdet` (mặc định) | qrdet YOLOv8s-seg, torch, imgsz 1280 | torch (GPU nếu có) |
+| `onnx` | YOLOv8n detect chuyển từ qrdet-n (`qr/models/qrdet_n_detect.onnx`), ONNX Runtime | `onnxruntime`, không cần torch lúc chạy |
+| `openvino` | cùng model, OpenVINO | `openvino` |
+
+`QR_DETECT_SCALE` (mặc định 0,6) là tỉ lệ thu ảnh trước khi đưa vào mạng, `QR_DETECT_THREADS` giới hạn số luồng. Tạo lại model: `python tools/export_qrdet_detect.py` (chép trọng số qrdet-n seg sang YOLOv8n detect, không train, kiểm tra hộp trùng bản seg). So độ nhạy và tốc độ trên `data/field`: `python tools/bench_detector.py`. Đo 19/11/2026 trên Ryzen 5 5500U, dải 1072 hàng, 363 frame có tem và 224 frame không tem (recall so với qrdet-s):
+
+| Bộ phát hiện | recall | nhầm (frame không tem) | ms p50 / p95 |
+|---|---:|---:|---:|
+| qrdet-s seg torch 1280 (hiện tại) | 100% | 1 | 437 / 765 |
+| qrdet-n seg torch 1280 | 97,8% | 7 | 207 / 499 |
+| n-detect OpenVINO ×0,5 | 92,2% | 7 | 96 / 117 |
+| n-detect OpenVINO ×0,6 | 93,2% | 8 | 153 / 240 |
+| n-detect OpenVINO ×0,75 | 98,8% | 7 | 217 / 305 |
+| n-detect ONNX Runtime ×0,75 | 98,8% | 7 | 292 / 398 |
+
+Mọi phương án đều bắt được cả 10/10 lượt. Dữ liệu là cấu hình cũ (QR 55–75 px, gần cỡ QR mới ~57 px), chỉ dùng để so bộ phát hiện. Chưa đổi mặc định: cần đo lại trên bản ghi buồng tối và máy hiện trường (Jetson/CPU).
+
+**Lọc chống đọc sai** (`qr/content_filter.py`, luôn bật): nội dung phải khớp `[0-9]+#[0-9]+` (toàn chuỗi); kết quả zxing phải là QR version 2 mức M; kết quả WeChat (không báo version) phải có 25 ô, đếm qua đường timing; tâm mã phải nằm trong vùng đang đọc, nới 15% (chặn đọc nhầm tem bên cạnh). Mã bị loại ghi log `code_rejected` kèm lý do và không tính phiếu. Kết quả bộ đọc nền cũng qua lọc nội dung.
+
+**Đọc nền cho QR khó:** lượt mà bộ đọc thường không đọc được được gửi sang một tiến trình riêng chạy bộ giải trong `qr/solvers` (tái tạo trên lưới ô `grid_sr`, rồi `preproc_sweep`), cả hai chỉ nhận QR version 2 mức M. Lượt đó báo mã trễ khoảng 4 s chờ đóng lượt cộng thời gian giải; lượt đọc được bình thường không bị trễ. Đo trên 8 lượt V2-M tổng hợp khó (2,0–2,3 px/ô, σ 0,8–1,6 px), Ryzen 5 5500U: B đọc 6/8, p50 4,1 s (bản cũ 5/8, 10,2 s); C đọc 6/8, p50 3,3 s (bản cũ 6/8, 6,9 s); lượt không có mã: B 4,9 s, C 12 s. Test: `python -m unittest tests.test_solvers_v2m` (chậm, khoảng 40 s). Muốn chạy pipeline cũ để đối chiếu: đặt biến môi trường `QR_FALLBACK=off` trước khi chạy (PowerShell: `$env:QR_FALLBACK="off"`).
 
 ## Bản phát lại dữ liệu đã ghi
 
