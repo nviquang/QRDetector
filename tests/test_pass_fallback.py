@@ -140,6 +140,17 @@ class ReaderHoldTest(unittest.TestCase):
         self.assertEqual(len(result.finished), 1)
         self.assertIsNone(result.finished[0].text)
 
+    def test_solver_text_in_wrong_format_is_dropped(self):
+        fallback = FakeFallback()
+        h = Harness(fallback)
+        h.reader._code_pattern = r"[0-9]+#[0-9]+"
+        h.run_pass()
+        fallback.finish(0, "ABC123")
+        with self.assertLogs("solution.qr", "WARNING"):
+            result = h.step([])
+        self.assertEqual(result.first_reads, [])
+        self.assertIsNone(result.finished[0].text)
+
     def test_full_queue_finishes_pass_unread(self):
         h = Harness(FakeFallback(full=True))
         self.assertEqual(len(h.run_pass().finished), 1)

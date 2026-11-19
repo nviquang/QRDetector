@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from qr import multiframe  # noqa: E402
+from qr.content_filter import CODE_PATTERN  # noqa: E402
 from qr.decoder import read_zxing_gray  # noqa: E402
 from qr.improved_pipeline import ImprovePipeline  # noqa: E402
 from qr.multiframe import PassDecoder, stack_rois, wiener_motion  # noqa: E402
@@ -52,9 +53,10 @@ def track(track_id=1, velocity=(0.0, 0.0)):
 
 
 class DefaultPipelineTests(unittest.TestCase):
-    def test_pipeline_accepts_any_code_format_by_default(self):
+    def test_pipeline_filters_field_format_and_v2m_by_default(self):
         pipeline = ImprovePipeline(detector=object())
-        self.assertIsNone(pipeline.code_pattern)
+        self.assertEqual(pipeline.code_pattern, CODE_PATTERN)
+        self.assertEqual(pipeline.expected_symbol, ("2", "M"))
 
 
 class StackRoisTests(unittest.TestCase):
@@ -115,7 +117,7 @@ class PassDecoderTests(unittest.TestCase):
         frame, (det,) = frame_with_qrs([(CODE, (200, 100))])
         tried = []
 
-        def fake(gray, binarizer=None):
+        def fake(gray, binarizer=None, symbol=None):
             tried.append(binarizer)
             return (CODE, np.zeros((4, 2), np.float32)) if binarizer == zxingcpp.Binarizer.FixedThreshold else None
 
@@ -179,14 +181,14 @@ class PassDecoderTests(unittest.TestCase):
         frame, (det,) = frame_with_qrs([(CODE, (200, 100))])
         decoder = PassDecoder(PATTERN)
         pad = multiframe.UPSCALE_PAD_PER_SCALE * 4
-        pts = np.array([[0, 0], [40, 0], [40, 40], [0, 40]], np.float32) + pad
+        pts = np.array([[0, 0], [400, 0], [400, 400], [0, 400]], np.float32) + pad   # tâm nằm trong bbox
         x1, y1, _, _ = multiframe.roi_bounds(frame.shape, det.bbox_xyxy, 0.25)
         with mock.patch.object(multiframe, "read_zxing_gray", return_value=None), \
                 mock.patch.object(multiframe, "read_wechat_gray", return_value=(CODE, pts)) as wechat:
             hit = decoder.read(frame, det.bbox_xyxy, None, track(), [3.0])
         self.assertEqual(wechat.call_count, 1)
         self.assertEqual(hit.text, CODE)
-        np.testing.assert_allclose(hit.corners[2], [x1 + 10, y1 + 10])
+        np.testing.assert_allclose(hit.corners[2], [x1 + 100, y1 + 100])
         self.assertNotIn(1, decoder.states)     # đọc được thì không gom ảnh
 
     def test_roi_touching_frame_edge_is_not_collected(self):

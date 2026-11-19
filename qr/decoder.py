@@ -10,6 +10,8 @@ import numpy as np
 import zxingcpp
 from pyzbar.pyzbar import decode as _pyzbar_decode
 
+from .content_filter import symbol_ok
+
 
 # ── Decoder riêng lẻ ─────────────────────────────────────────────────────────
 
@@ -118,14 +120,15 @@ def _zxing_corners(barcode) -> np.ndarray:
                     np.float32)
 
 
-def read_zxing_gray(gray: np.ndarray, binarizer=None) -> tuple[str, np.ndarray] | None:
+def read_zxing_gray(gray: np.ndarray, binarizer=None, symbol=None) -> tuple[str, np.ndarray] | None:
     """zxing-cpp, mặc định binarizer LocalAverage — rất nhanh (~1ms) trên ROI đã upscale.
 
+    symbol: (version, mức sửa lỗi) bắt buộc, ví dụ ``content_filter.EXPECTED_SYMBOL``; None = nhận mọi loại.
     Trả (nội dung, 4 góc QR (4, 2) trong tọa độ ``gray``) hoặc None.
     """
     options = {} if binarizer is None else {"binarizer": binarizer}
     for b in zxingcpp.read_barcodes(gray, formats=zxingcpp.BarcodeFormat.QRCode, try_rotate=True, **options):
-        if b.valid and b.text:
+        if b.valid and b.text and symbol_ok(b, symbol):
             return b.text, _zxing_corners(b)
     return None
 

@@ -8,9 +8,19 @@ from qr.detector import Detection
 _BORDER_MODULES = 2      # QRCodeEncoder của OpenCV đệm 2 ô trắng mỗi phía (25×25 cho QR 21 ô)
 
 
-def qr_image(text: str, scale: int = 4) -> np.ndarray:
-    """QR xám (đã gồm viền trắng của encoder) phóng ``scale`` lần, giữ cạnh sắc."""
-    code = cv2.QRCodeEncoder.create().encode(text)
+_LEVELS = {"L": cv2.QRCodeEncoder_CORRECT_LEVEL_L, "M": cv2.QRCodeEncoder_CORRECT_LEVEL_M,
+           "Q": cv2.QRCodeEncoder_CORRECT_LEVEL_Q, "H": cv2.QRCodeEncoder_CORRECT_LEVEL_H}
+
+
+def qr_image(text: str, scale: int = 4, version: int | None = None, level: str | None = None) -> np.ndarray:
+    """QR xám (đã gồm viền trắng của encoder) phóng ``scale`` lần, giữ cạnh sắc.
+    version/level: ép version và mức sửa lỗi (ví dụ 2, "M" như tem hiện trường); None = encoder tự chọn."""
+    params = cv2.QRCodeEncoder.Params()
+    if version is not None:
+        params.version = version
+    if level is not None:
+        params.correction_level = _LEVELS[level]
+    code = cv2.QRCodeEncoder.create(params).encode(text)
     return cv2.resize(code, None, fx=scale, fy=scale, interpolation=cv2.INTER_NEAREST)
 
 

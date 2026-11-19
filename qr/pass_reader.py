@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from . import pass_fallback
+from .content_filter import accept_text
 from .corrector import display_quad
 from .detector import Detection
 from .multiframe import PassDecoder
@@ -103,7 +104,9 @@ class PassReader:
         """
         self._pipeline = pipeline
         multi_frame = getattr(pipeline, "multi_frame", False) is True
-        self._decoder = PassDecoder(pipeline.code_pattern, pipeline.roi_margin) if multi_frame else None
+        self._decoder = PassDecoder(pipeline.code_pattern, pipeline.roi_margin,
+                                    getattr(pipeline, "expected_symbol", None)) if multi_frame else None
+        self._code_pattern = getattr(pipeline, "code_pattern", None)
         self._tracker = tracker if tracker is not None else PassTracker(
             max_gap=100, max_speed_px=30.0, strict=multi_frame)
         self._min_votes = min_votes
@@ -373,6 +376,9 @@ class PassReader:
                 continue
             if error:
                 logger.warning("pass_fallback_error id=%d: %s", t.track_id, error)
+            if text and not accept_text(text, self._code_pattern):
+                logger.warning("code_rejected text=%r reason=bộ đọc nền trả mã sai định dạng id=%d", text, t.track_id)
+                text = None
             if text:
                 t.texts[text] = max(self._min_votes, self._announce_votes)
                 self._late_reads.append(t)

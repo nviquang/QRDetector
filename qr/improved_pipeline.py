@@ -24,6 +24,7 @@ from typing import Callable
 import cv2
 import numpy as np
 
+from .content_filter import CODE_PATTERN, EXPECTED_SYMBOL
 from .corrector import add_quiet_zone, warp_matrix, warp_qr
 from .decoder import read_wechat_gray, read_zxing_gray
 from .detector import Detection, QRDetector
@@ -56,9 +57,9 @@ def _roi_step(preprocess: Callable[[np.ndarray], np.ndarray], scale: int, read: 
 
 
 def _warp_zxing_step(image_bgr: np.ndarray, det: Detection, roi_gray: np.ndarray,
-                     origin: np.ndarray) -> Decoded | None:
+                     origin: np.ndarray, symbol=None) -> Decoded | None:
     warped = cv2.cvtColor(warp_qr(image_bgr, det, out_size=_WARP_SIZE), cv2.COLOR_BGR2GRAY)
-    hit = read_zxing_gray(add_quiet_zone(warped, pad_px=_WARP_PAD))
+    hit = read_zxing_gray(add_quiet_zone(warped, pad_px=_WARP_PAD), symbol=symbol)
     if hit is None:
         return None
     text, pts = hit
@@ -91,15 +92,19 @@ class ImprovePipeline:
         device: str = "auto",
         half: bool = False,
         multi_frame: bool = True,
-        code_pattern: str | None = None,
+        code_pattern: str | None = CODE_PATTERN,
+        expected_symbol: tuple[str, str] | None = EXPECTED_SYMBOL,
     ):
         """detector: object có ``detect(image_bgr) -> list[Detection]`` — mặc định QRDetector (YOLO,
         GPU nếu có); test truyền detector giả để không phải nạp model.
         multi_frame: PassReader đọc nhiều frame (xem qr/multiframe.py); False = cascade từng frame như cũ.
-        code_pattern: regex mã hợp lệ cho chế độ nhiều frame; None = nhận mọi nội dung (tem không có
-                      định dạng cố định)."""
+        code_pattern: regex mã hợp lệ cho chế độ nhiều frame (fullmatch); mặc định ``dãy số#dãy số``.
+                      None = nhận mọi nội dung (chỉ dùng khi đo dữ liệu cũ).
+        expected_symbol: (version, mức sửa lỗi) bắt buộc với kết quả zxing ở chế độ nhiều frame; mặc định V2-M.
+                      None = nhận mọi loại."""
         self.multi_frame = multi_frame
         self.code_pattern = code_pattern
+        self.expected_symbol = expected_symbol
         self.roi_margin = roi_margin
         self._detector = detector if detector is not None else QRDetector(
             model_size=model_size, conf_th=conf_th, imgsz=imgsz, device=device, half=half)

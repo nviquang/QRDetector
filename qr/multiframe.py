@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 import logging
-import re
 from collections import deque
 from dataclasses import dataclass, field
 
@@ -22,6 +21,7 @@ import cv2
 import numpy as np
 import zxingcpp
 
+from .content_filter import accept_text, inside
 from .decoder import read_wechat_gray, read_zxing_gray
 from .improved_pipeline import Decoded, _warp_zxing_step
 from .preprocessor import UPSCALE_PAD_PER_SCALE, clahe, roi_bounds, stretch_contrast, upscale_gray
@@ -104,11 +104,15 @@ class _PassState:
 
 
 class PassDecoder:
-    def __init__(self, code_pattern: str | None, roi_margin: float = 0.25):
-        """code_pattern: regex nội dung hợp lệ; đọc ra mã khác thì coi như chưa đọc được."""
-        self._pattern = re.compile(code_pattern) if code_pattern else None
+    def __init__(self, code_pattern: str | None, roi_margin: float = 0.25, symbol=None):
+        """code_pattern: regex nội dung hợp lệ (fullmatch); đọc ra mã khác thì coi như chưa đọc được.
+        symbol: (version, mức sửa lỗi) bắt buộc với kết quả zxing; None = nhận mọi loại.
+        Mã có tâm nằm ngoài bbox đang đọc (nới ``content_filter.POSITION_MARGIN``) cũng bị loại: đó là tem bên cạnh."""
+        self._pattern = code_pattern
+        self._symbol = symbol
         self._margin = roi_margin
-        self._rejected: set[str] = set()
+        self._bbox = None
+        self._rejected: set[tuple[str, str]] = set()
         self.states: dict[int, _PassState] = {}
 
     def forget(self, track_id: int):
@@ -117,6 +121,7 @@ class PassDecoder:
     def read(self, image_bgr: np.ndarray, bbox, det, track: Track | None,
              blur_lengths: list[float]) -> Decoded | None:
         """det=None: ROI đoán từ vận tốc lượt. track=None: chỉ đọc frame này, không gom ảnh."""
+        self._bbox = bbox
         x1, y1, x2, y2 = roi_bounds(image_bgr.shape, bbox, self._margin)
         roi = image_bgr[y1:y2, x1:x2]
         if roi.size == 0:
@@ -137,23 +142,29 @@ class PassDecoder:
         if hit is None:
             return None
         text, pts = hit
-        if self._pattern is not None and not self._pattern.match(text):
-            if text not in self._rejected and len(self._rejected) < _MAX_LOGGED_REJECTS:
-                self._rejected.add(text)
-                logger.warning("code_rejected text=%s (sai định dạng, kiểm tra code_pattern nếu đây là mã thật)", text)
-            return None
-        return Decoded(text, to_frame(pts).astype(np.float32))
+        corners = to_frame(pts).astype(np.float32)
+        if not accept_text(text, self._pattern):
+            return self._reject(text, "sai định dạng, kiểm tra code_pattern nếu đây là mã thật")
+        if not inside(corners, self._bbox):
+            return self._reject(text, "tâm mã nằm ngoài vùng đang đọc (tem bên cạnh)")
+        return Decoded(text, corners)
+
+    def _reject(self, text: str, reason: str) -> None:
+        if (text, reason) not in self._rejected and len(self._rejected) < _MAX_LOGGED_REJECTS:
+            self._rejected.add((text, reason))
+            logger.warning("code_rejected text=%r reason=%s", text, reason)
+        return None
 
     def _read_single(self, image_bgr, det, gray, origin) -> Decoded | None:
         up = upscale_gray(gray, 4)
         pad = UPSCALE_PAD_PER_SCALE * 4
         to_frame = lambda pts: (pts - pad) / 4 + origin  # noqa: E731
         for binarizer in (None, zxingcpp.Binarizer.GlobalHistogram, zxingcpp.Binarizer.FixedThreshold):
-            hit = self._accept(read_zxing_gray(up, binarizer), to_frame)
+            hit = self._accept(read_zxing_gray(up, binarizer, self._symbol), to_frame)
             if hit:
                 return hit
         if det is not None:
-            warped = _warp_zxing_step(image_bgr, det, gray, origin)
+            warped = _warp_zxing_step(image_bgr, det, gray, origin, self._symbol)
             if warped is not None:
                 hit = self._accept((warped.text, warped.corners), lambda pts: pts)
                 if hit:
@@ -176,7 +187,7 @@ class PassDecoder:
         to_frame = lambda pts: (pts - pad) / 4 + origin  # noqa: E731
         for length in blur_lengths:
             out = wiener_motion(up, length * 2, angle, WIENER_K)
-            hit = self._accept(read_zxing_gray(upscale_gray(out, 2)), to_frame)
+            hit = self._accept(read_zxing_gray(upscale_gray(out, 2), symbol=self._symbol), to_frame)
             if hit:
                 return hit
         return None
@@ -195,14 +206,14 @@ class PassDecoder:
         to_frame = lambda pts: (pts - STACK_PAD) / STACK_SCALE + origin  # noqa: E731
         pad = lambda g: cv2.copyMakeBorder(g, STACK_PAD, STACK_PAD, STACK_PAD, STACK_PAD,  # noqa: E731
                                            cv2.BORDER_REPLICATE)
-        hit = self._accept(read_zxing_gray(pad(stacked)), to_frame)
+        hit = self._accept(read_zxing_gray(pad(stacked), symbol=self._symbol), to_frame)
         if hit:
             return hit
         if blur_lengths:
             angle = float(np.arctan2(track.velocity[1], track.velocity[0]))
             for length in blur_lengths:
                 out = wiener_motion(stacked, length * STACK_SCALE, angle, WIENER_K / STACK_SCALE)
-                hit = self._accept(read_zxing_gray(pad(out)), to_frame)
+                hit = self._accept(read_zxing_gray(pad(out), symbol=self._symbol), to_frame)
                 if hit:
                     return hit
         return self._accept(read_wechat_gray(pad(stacked), use_cnn=True), to_frame)
