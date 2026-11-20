@@ -53,10 +53,10 @@ def track(track_id=1, velocity=(0.0, 0.0)):
 
 
 class DefaultPipelineTests(unittest.TestCase):
-    def test_pipeline_filters_field_format_and_v2m_by_default(self):
+    def test_pipeline_filters_field_format_and_accepts_every_version_by_default(self):
         pipeline = ImprovePipeline(detector=object())
         self.assertEqual(pipeline.code_pattern, CODE_PATTERN)
-        self.assertEqual(pipeline.expected_symbol, ("2", "M"))
+        self.assertIsNone(pipeline.expected_symbol)
 
 
 class StackRoisTests(unittest.TestCase):

@@ -26,7 +26,7 @@ from typing import Callable
 import cv2
 import numpy as np
 
-from .content_filter import CODE_PATTERN, EXPECTED_SYMBOL
+from .content_filter import ACCEPT_SYMBOL, CODE_PATTERN
 from .corrector import add_quiet_zone, warp_matrix, warp_qr
 from .decoder import read_wechat_gray, read_zxing_gray
 from .detector import Detection, QRDetector
@@ -127,15 +127,15 @@ class ImprovePipeline:
         half: bool = False,
         multi_frame: bool = True,
         code_pattern: str | None = CODE_PATTERN,
-        expected_symbol: tuple[str, str] | None = EXPECTED_SYMBOL,
+        expected_symbol: tuple[str, str] | None = ACCEPT_SYMBOL,
     ):
         """detector: object có ``detect(image_bgr) -> list[Detection]`` — mặc định QRDetector (YOLO,
         GPU nếu có); test truyền detector giả để không phải nạp model.
         multi_frame: PassReader đọc nhiều frame (xem qr/multiframe.py); False = cascade từng frame như cũ.
         code_pattern: regex mã hợp lệ cho chế độ nhiều frame (fullmatch); mặc định ``dãy số#dãy số``.
                       None = nhận mọi nội dung (chỉ dùng khi đo dữ liệu cũ).
-        expected_symbol: (version, mức sửa lỗi) bắt buộc với kết quả zxing ở chế độ nhiều frame; mặc định V2-M.
-                      None = nhận mọi loại."""
+        expected_symbol: (version, mức sửa lỗi) bắt buộc ở chế độ nhiều frame, ví dụ ``content_filter.EXPECTED_SYMBOL``
+                      (V2-M); mặc định None = nhận mọi version và mức sửa lỗi."""
         self.multi_frame = multi_frame
         self.code_pattern = code_pattern
         self.expected_symbol = expected_symbol

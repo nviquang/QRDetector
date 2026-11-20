@@ -31,7 +31,7 @@ import numpy as np  # noqa: E402
 from grid_model import (Warp, FrameData, Fitter, Hypothesis, LAYOUTS, Solver, Template, build_matrix, corners_to_h,  # noqa: E402
                         fit_photometric, initial_fit, align_by_finders, motion_offsets, pixel_set, psf_points, transfer_corners)
 from qrspec import FORMAT_CODES, codeword_map, expand_blocks, format_info, pad_bytes, parse_payload, rs_decode  # noqa: E402
-from qr.content_filter import CODE_PATTERN, EXPECTED_SYMBOL, accept_text, inside  # noqa: E402
+from qr.content_filter import ACCEPT_SYMBOL, CODE_PATTERN, accept_text, inside  # noqa: E402
 from qr.detector import Detection  # noqa: E402
 from qr.multiframe import PassDecoder  # noqa: E402
 from qr.tracker import Track  # noqa: E402
@@ -40,10 +40,10 @@ PAD_W = 8          # số byte yếu nhất được thử xóa theo mọi tổ 
 N_G = 5            # số điểm Gauss theo mỗi trục khi dựng ma trận PSF
 SIGMA_GRID = (0.4, 0.7, 1.0, 1.3, 1.6, 1.9)   # lưới thô σ (px) theo mỗi trục, rồi tinh chỉnh quanh điểm tốt nhất
 SIGMA_STEP = 0.15
-VERSIONS = (2,)    # tem hiện trường: QR version 2 (README, mục Bài toán và ràng buộc) — chỉ nhận lời giải version này
-SEARCH_VERSIONS = (1, 2, 3)   # vẫn tìm giả thiết lưới V1–V3: đo trên lượt V2 tổng hợp, chỉ tìm V2 mất 2/8 lượt đọc được
+VERSIONS = (1, 2, 3)   # version được nhận lời giải (mô hình lưới hỗ trợ V1–V3); đặt (2,) để chỉ nhận tem V2
+SEARCH_VERSIONS = (1, 2, 3)   # giả thiết lưới được tìm: đo trên lượt V2 tổng hợp, chỉ tìm V2 mất 2/8 lượt đọc được
 LEVEL_M = 0        # 2 bit mức sửa lỗi trong format: L=1, M=0, Q=3, H=2
-LEVELS = (LEVEL_M,)   # mức được xếp hạng ở fix_format
+LEVELS = (0, 1, 2, 3)   # mức được xếp hạng ở fix_format; đặt (LEVEL_M,) để chỉ xếp hạng mức M
 MAX_ERASE = 10     # xóa tối đa trong Chase: xóa càng nhiều càng dễ "sửa" ra từ mã sai (16 xóa = mọi từ đều giải được)
 CHASE_W = 6
 RS_BUDGET = 12     # 2 × số lỗi + số xóa tối đa được chấp nhận (khối V2-M có 16 byte EC)
@@ -502,7 +502,7 @@ def read_recon(obs, ctx):
     R = Recon(obs, ctx)
     if not R.fit_geometry():
         return None, []
-    if R.version not in VERSIONS:          # lưới tốt nhất không phải V2: không phải tem cần đọc, khỏi giải
+    if R.version not in VERSIONS:          # lưới tốt nhất không thuộc version được nhận: khỏi giải
         R.debug["version"] = R.version
         return R, []
     R.build_frames()
@@ -562,7 +562,7 @@ class GridSR:
     def read_pass(self, obs, ctx):
         need = min(2, len(obs))
         votes = collections.Counter()
-        dec = PassDecoder(CODE_PATTERN, symbol=EXPECTED_SYMBOL)
+        dec = PassDecoder(CODE_PATTERN, symbol=ACCEPT_SYMBOL)
         track = Track(track_id=1, first_frame=0, last_frame=0, center=(0.0, 0.0), size=1.0, velocity=ctx.velocity)
         blur = [ctx.blur_px] if ctx.blur_px >= 1.0 else []
         for o in (obs if self.baseline else []):

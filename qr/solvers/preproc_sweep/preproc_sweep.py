@@ -33,7 +33,7 @@ def _find_root():
 sys.path.insert(0, _find_root())
 
 from qr.decoder import read_wechat_gray  # noqa: E402
-from qr.content_filter import CODE_PATTERN, EXPECTED_SYMBOL, accept_text, inside, size_ok, symbol_ok  # noqa: E402
+from qr.content_filter import ACCEPT_SYMBOL, CODE_PATTERN, accept_text, inside, size_ok, symbol_ok  # noqa: E402
 from qr.detector import Detection  # noqa: E402
 from qr.multiframe import PassDecoder  # noqa: E402
 from qr.preprocessor import UPSCALE_PAD_PER_SCALE, stretch_contrast, upscale_gray  # noqa: E402
@@ -41,7 +41,7 @@ from qr.tracker import Track  # noqa: E402
 
 ALL_STEPS = "photo,sweep,warp,stack,lsq,joint,dd"
 DEFAULT_STEPS = "photo,sweep,warp"   # lsq/joint/stack/dd là bản yếu hơn của B (grid_sr) và tốn thời gian: tắt mặc định
-SIZES = (25,)                        # tem hiện trường: QR version 2 (README, mục Bài toán và ràng buộc)
+SIZES = (21, 25, 29, 33)             # số ô mỗi cạnh được thử khi khớp lưới (V1–V4); (25,) = chỉ tem V2
 BLUR_FACTORS = (1.0, 0.94, 0.88, 0.82, 1.06)      # lệch về phía ngắn: ước lượng thiếu dễ chấp nhận hơn thừa
 UEC_MIN = 0.25                                    # phần sửa lỗi còn dư tối thiểu (V1-L: tối đa 2 ký tự lỗi, như ISO)
 ROTS_DEG = (-6.0, 0.0, 6.0)
@@ -51,10 +51,10 @@ GRID_FIT_MIN = 0.55
 # ── đọc bằng decoder có sẵn ────────────────────────────────────────────────────
 
 def zx_hit(gray, binarizer=None, uec_min=UEC_MIN):
-    """zxing, chỉ nhận mã V2-M còn dư sửa lỗi và đúng định dạng: trả (text, 4 góc trong tọa độ ``gray``) hoặc None."""
+    """zxing, chỉ nhận mã còn dư sửa lỗi, đúng định dạng và đúng ``ACCEPT_SYMBOL`` (mặc định mọi loại): trả (text, 4 góc)."""
     opts = {} if binarizer is None else {"binarizer": binarizer}
     for b in zxingcpp.read_barcodes(gray, formats=zxingcpp.BarcodeFormat.QRCode, try_rotate=True, **opts):
-        if b.valid and b.text and symbol_ok(b, EXPECTED_SYMBOL) and accept_text(b.text, CODE_PATTERN):
+        if b.valid and b.text and symbol_ok(b, ACCEPT_SYMBOL) and accept_text(b.text, CODE_PATTERN):
             uec = b.extra.get("UEC", 1.0) if isinstance(b.extra, dict) else 1.0
             if uec >= uec_min:
                 p = b.position
@@ -80,7 +80,7 @@ def read_any_hit(gray, wechat=True):
             return hit
     if wechat:
         hit = read_wechat_gray(gray, use_cnn=True)
-        if hit and accept_text(hit[0], CODE_PATTERN) and size_ok(gray, hit[1], EXPECTED_SYMBOL):   # WeChat không báo version
+        if hit and accept_text(hit[0], CODE_PATTERN) and size_ok(gray, hit[1], ACCEPT_SYMBOL):   # WeChat không báo version
             return hit
     return None
 
@@ -733,7 +733,7 @@ class PreprocSweep:
         need = min(self.need, len(obs))
         votes = collections.Counter()
         read = [False] * len(obs)
-        dec = PassDecoder(CODE_PATTERN, symbol=EXPECTED_SYMBOL)
+        dec = PassDecoder(CODE_PATTERN, symbol=ACCEPT_SYMBOL)
         track = Track(track_id=1, first_frame=0, last_frame=0, center=(0.0, 0.0), size=1.0, velocity=ctx.velocity)
         blur = [ctx.blur_px] if ctx.blur_px >= 1.0 else []
 

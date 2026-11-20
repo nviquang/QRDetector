@@ -1,4 +1,4 @@
-"""Bộ đọc nền B (grid_sr) và C (preproc_sweep) chuẩn V2-M, trên lượt tổng hợp ở ~2,2 px/ô.
+"""Bộ đọc nền B (grid_sr) và C (preproc_sweep) trên lượt tổng hợp ở ~2,2 px/ô (V2-M và các version khác).
 
 Chậm (vài giây mỗi ca): chạy riêng bằng  python -m unittest tests.test_solvers_v2m
 """
@@ -59,10 +59,11 @@ class SolverTests(unittest.TestCase):
             self.assertIsNone(solver(name).read_pass(obs, ctx), name)
             self.assertLess(time.time() - t, limit, name)
 
-    def test_v1_symbol_is_not_reported(self):
-        obs, ctx = make_pass(text="12#34", version=1, level="L", ppm=2.2, sigma=(0.7, 0.7))
-        for name in "BC":
-            self.assertIsNone(solver(name).read_pass(obs, ctx), name)
+    def test_other_versions_are_read(self):
+        for version, level in ((1, "L"), (3, "Q")):
+            obs, ctx = make_pass(text="12#34", version=version, level=level, ppm=2.2, sigma=(0.7, 0.7))
+            for name in "BC":
+                self.assertEqual(solver(name).read_pass(obs, ctx), "12#34", (name, version))
 
     def test_neighbour_label_alone_is_not_reported(self):
         # tem đang đọc bị mờ hẳn (không đọc được), tem bên cạnh nét lọt một phần vào crop

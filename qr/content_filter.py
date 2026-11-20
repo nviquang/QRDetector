@@ -12,7 +12,8 @@ import cv2
 import numpy as np
 
 CODE_PATTERN = r"[0-9]+#[0-9]+"   # [0-9] chứ không \d: \d khớp cả chữ số Unicode (１２…)
-EXPECTED_SYMBOL = ("2", "M")      # (version, mức sửa lỗi) theo cách zxing-cpp ghi trong ``extra``
+EXPECTED_SYMBOL = ("2", "M")      # V2-M theo cách zxing-cpp ghi trong ``extra`` — chỉ dùng khi muốn ép loại tem
+ACCEPT_SYMBOL = None              # chính sách mặc định của pipeline và bộ giải: nhận mọi version, mọi mức sửa lỗi
 POSITION_MARGIN = 0.15            # tâm mã được lệch ra ngoài bbox tối đa chừng này × cạnh bbox
 
 _compiled: dict[str, re.Pattern] = {}
@@ -38,7 +39,7 @@ def symbol_of(result) -> tuple[str | None, str | None]:
     return extra.get("Version"), extra.get("ECLevel")
 
 
-def symbol_ok(result, expected: tuple[str, str] | None = EXPECTED_SYMBOL) -> bool:
+def symbol_ok(result, expected: tuple[str, str] | None = None) -> bool:
     """Kết quả zxing-cpp đúng version và mức sửa lỗi mong đợi. ``expected=None`` = không kiểm tra."""
     if expected is None:
         return True
@@ -83,7 +84,7 @@ def module_count(gray: np.ndarray, corners, sizes=SIZES) -> tuple[int | None, fl
     return best_n, best
 
 
-def size_ok(gray, corners, expected: tuple[str, str] | None = EXPECTED_SYMBOL, min_score: float = 0.3) -> bool:
+def size_ok(gray, corners, expected: tuple[str, str] | None = None, min_score: float = 0.3) -> bool:
     """Mã (từ decoder không báo version) có số ô khớp version mong đợi. ``expected=None`` = không kiểm tra."""
     if expected is None:
         return True
