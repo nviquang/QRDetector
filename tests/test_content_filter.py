@@ -39,8 +39,12 @@ class AcceptTextTests(unittest.TestCase):
         for text in ("1#2", "000000585545#000000585545", FIELD_CODE):
             self.assertTrue(accept_text(text), text)
 
+    def test_digits_only_is_accepted(self):
+        for text in ("1234", "000000585545"):
+            self.assertTrue(accept_text(text), text)
+
     def test_rejects_other_shapes(self):
-        for text in ("", None, "1234", "#12", "12#", "12#34#5", "a1#2", "12 #34", "12#34\n", "１２#34"):
+        for text in ("", None, "#12", "12#", "12#34#5", "a1#2", "12 #34", "12#34\n", "1234\n", "１２#34", "１２３"):
             self.assertFalse(accept_text(text), repr(text))
 
     def test_none_pattern_accepts_any_non_empty_text(self):

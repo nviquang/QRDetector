@@ -11,7 +11,7 @@ import re
 import cv2
 import numpy as np
 
-CODE_PATTERN = r"[0-9]+#[0-9]+"   # [0-9] chứ không \d: \d khớp cả chữ số Unicode (１２…)
+CODE_PATTERN = r"[0-9]+(?:#[0-9]+)?"   # dãy số, có thể thêm "#" + dãy số; [0-9] chứ không \d (\d khớp cả "１２…")
 EXPECTED_SYMBOL = ("2", "M")      # V2-M theo cách zxing-cpp ghi trong ``extra`` — chỉ dùng khi muốn ép loại tem
 ACCEPT_SYMBOL = None              # chính sách mặc định của pipeline và bộ giải: nhận mọi version, mọi mức sửa lỗi
 POSITION_MARGIN = 0.15            # tâm mã được lệch ra ngoài bbox tối đa chừng này × cạnh bbox
