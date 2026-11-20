@@ -18,6 +18,7 @@ scale, cộng gốc ROI; bước warp đi ngược qua homography) — UI vẽ q
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from typing import Callable
@@ -30,6 +31,8 @@ from .corrector import add_quiet_zone, warp_matrix, warp_qr
 from .decoder import read_wechat_gray, read_zxing_gray
 from .detector import Detection, QRDetector
 from .preprocessor import UPSCALE_PAD_PER_SCALE, clahe, roi_bounds, stretch_contrast, upscale_gray
+
+logger = logging.getLogger("solution.qr")
 
 _WARP_SIZE = 256
 _WARP_PAD = 32
@@ -82,22 +85,33 @@ _CASCADE = (
 )
 
 
+DEFAULT_DETECTOR = "openvino"
+DEFAULT_DETECT_SCALE = 0.75
+
+
 def make_detector(model_size: str = "s", conf_th: float = 0.3, imgsz: int = 1280, device: str = "auto",
                   half: bool = False):
     """Chọn bộ phát hiện theo biến môi trường ``QR_DETECTOR``:
-    - ``qrdet`` (mặc định): qrdet YOLOv8-seg trên torch (GPU nếu có), ``model_size``/``imgsz`` như cũ;
-    - ``onnx`` / ``openvino``: YOLOv8n detect chuyển từ qrdet-n (``qr/models/qrdet_n_detect.onnx``), CPU, không cần
-      torch; tỉ lệ thu ``QR_DETECT_SCALE`` (mặc định 0,6), số luồng ``QR_DETECT_THREADS``.
+    - ``openvino`` (mặc định) / ``onnx``: YOLOv8n detect chuyển từ qrdet-n (``qr/models/qrdet_n_detect.onnx``), CPU,
+      không cần torch; tỉ lệ thu ``QR_DETECT_SCALE`` (mặc định 0,75), số luồng ``QR_DETECT_THREADS``. Đo 19/11/2026:
+      recall 99,7% so với qrdet-s, 144 ms so với 305 ms (README, mục Bản demo dùng camera Basler);
+    - ``qrdet``: qrdet-s YOLOv8-seg trên torch (GPU nếu có), ``model_size``/``imgsz`` như cũ.
+    Thiếu thư viện hoặc file model thì lùi dần openvino → onnxruntime → qrdet và ghi cảnh báo.
     """
-    kind = os.environ.get("QR_DETECTOR", "qrdet").strip().lower()
-    if kind in ("onnx", "onnxruntime", "openvino"):
+    kind = os.environ.get("QR_DETECTOR", DEFAULT_DETECTOR).strip().lower()
+    if kind not in ("qrdet", "onnx", "onnxruntime", "openvino"):
+        raise ValueError(f"QR_DETECTOR={kind!r} không hợp lệ (qrdet | onnx | openvino)")
+    if kind != "qrdet":
         from .detector_onnx import OnnxQRDetector
         threads = os.environ.get("QR_DETECT_THREADS")
-        return OnnxQRDetector(scale=float(os.environ.get("QR_DETECT_SCALE", "0.6")), conf_th=conf_th,
-                              backend="openvino" if kind == "openvino" else "onnxruntime",
-                              threads=int(threads) if threads else None)
-    if kind != "qrdet":
-        raise ValueError(f"QR_DETECTOR={kind!r} không hợp lệ (qrdet | onnx | openvino)")
+        scale = float(os.environ.get("QR_DETECT_SCALE", str(DEFAULT_DETECT_SCALE)))
+        backends = ["openvino", "onnxruntime"] if kind == "openvino" else ["onnxruntime"]
+        for backend in backends:
+            try:
+                return OnnxQRDetector(scale=scale, conf_th=conf_th, backend=backend,
+                                      threads=int(threads) if threads else None)
+            except (ImportError, FileNotFoundError, RuntimeError) as e:
+                logger.warning("Không dùng được bộ phát hiện %s (%s) — thử phương án kế tiếp", backend, e)
     return QRDetector(model_size=model_size, conf_th=conf_th, imgsz=imgsz, device=device, half=half)
 
 

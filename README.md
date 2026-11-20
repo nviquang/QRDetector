@@ -174,11 +174,11 @@ Cấu hình lưu riêng ở `config/basler_settings.json`. Mặc định Basler:
 
 | `QR_DETECTOR` | Model | Cần |
 |---|---|---|
-| `qrdet` (mặc định) | qrdet YOLOv8s-seg, torch, imgsz 1280 | torch (GPU nếu có) |
-| `onnx` | YOLOv8n detect chuyển từ qrdet-n (`qr/models/qrdet_n_detect.onnx`), ONNX Runtime | `onnxruntime`, không cần torch lúc chạy |
-| `openvino` | cùng model, OpenVINO | `openvino` |
+| `openvino` (mặc định) | YOLOv8n detect chuyển từ qrdet-n (`qr/models/qrdet_n_detect.onnx`), OpenVINO, CPU | `openvino`, không cần torch lúc chạy |
+| `onnx` | cùng model, ONNX Runtime | `onnxruntime` |
+| `qrdet` | qrdet YOLOv8s-seg, torch, imgsz 1280 (bộ phát hiện cũ) | torch (GPU nếu có) |
 
-`QR_DETECT_SCALE` (mặc định 0,6) là tỉ lệ thu ảnh trước khi đưa vào mạng, `QR_DETECT_THREADS` giới hạn số luồng. Tạo lại model: `python tools/export_qrdet_detect.py` (chép trọng số qrdet-n seg sang YOLOv8n detect, không train, kiểm tra hộp trùng bản seg; `--seg` xuất thêm chính bản seg sang ONNX để so). Tiền xử lý giống LetterBox của ultralytics (INTER_LINEAR, đệm chia đều hai phía). So độ nhạy và tốc độ trên `data/field`: `python tools/bench_detector.py`.
+Thiếu `openvino` thì tự lùi sang ONNX Runtime, rồi qrdet, và ghi cảnh báo. Bộ phát hiện ONNX/OpenVINO chỉ chạy CPU nên ô **Dùng GPU** bị vô hiệu hóa; muốn dùng GPU của máy phát triển thì đặt `QR_DETECTOR=qrdet`. `QR_DETECT_SCALE` (mặc định 0,75) là tỉ lệ thu ảnh trước khi đưa vào mạng, `QR_DETECT_THREADS` giới hạn số luồng. Tạo lại model: `python tools/export_qrdet_detect.py` (chép trọng số qrdet-n seg sang YOLOv8n detect, không train, kiểm tra hộp trùng bản seg; `--seg` xuất thêm chính bản seg sang ONNX để so). Tiền xử lý giống LetterBox của ultralytics (INTER_LINEAR, đệm chia đều hai phía). So độ nhạy và tốc độ trên `data/field`: `python tools/bench_detector.py`.
 
 Đo 19/11/2026, Ryzen 5 5500U, cùng model nano (qrdet-n) ở ba cách chạy, tỉ lệ thu áp cho cạnh dài của từng ảnh; 363 frame có tem (638 hộp, không tính tem chạm mép vì sản phẩm bỏ qua), 224 frame không tem; recall so với qrdet-s:
 
@@ -198,7 +198,7 @@ Cấu hình lưu riêng ở `config/basler_settings.json`. Mặc định Basler:
 | | qrdet-n seg / n-detect ONNX Runtime | 99,7% | 5 | 242 / 182 |
 | | qrdet-n seg / n-detect OpenVINO | 99,7% | 5 | 185 / 144 |
 
-Ở các dòng "seg / detect" hai số ms là p50 của bản seg / bản detect (cùng recall). Kết luận: bỏ nhánh mask không đổi kết quả (seg và detect trùng nhau ở mọi tỉ lệ) và nhanh hơn 25–45%; ONNX/OpenVINO hụt 1–2 điểm recall so với torch ở ×0,45–0,6 vì tỉ lệ thu thực của ultralytics lệch chút ít (ví dụ ×0,607 thay vì ×0,6), làm vài tem sát ngưỡng độ tin rơi xuống dưới 0,3; ở ×0,75 bằng nhau. OpenVINO nhanh nhất. Mọi phương án bắt được 10/10 lượt. Cột "nhầm" (hộp trên đoạn không có tem) chưa xem lại bằng mắt: nhãn đoạn là heuristic và EDA ghi nhận có tem trắng YOLO bỏ sót trong đoạn `glass_no_det`. Dữ liệu là cấu hình cũ (QR 55–75 px, gần cỡ QR mới ~57 px), chỉ dùng để so bộ phát hiện. Chưa đổi mặc định: cần đo lại trên bản ghi buồng tối và máy hiện trường (Jetson/CPU).
+Ở các dòng "seg / detect" hai số ms là p50 của bản seg / bản detect (cùng recall). Kết luận: bỏ nhánh mask không đổi kết quả (seg và detect trùng nhau ở mọi tỉ lệ) và nhanh hơn 25–45%; ONNX/OpenVINO hụt 1–2 điểm recall so với torch ở ×0,45–0,6 vì tỉ lệ thu thực của ultralytics lệch chút ít (ví dụ ×0,607 thay vì ×0,6), làm vài tem sát ngưỡng độ tin rơi xuống dưới 0,3; ở ×0,75 bằng nhau. OpenVINO nhanh nhất. Mọi phương án bắt được 10/10 lượt. Cột "nhầm" (hộp trên đoạn không có tem) chưa xem lại bằng mắt: nhãn đoạn là heuristic và EDA ghi nhận có tem trắng YOLO bỏ sót trong đoạn `glass_no_det`. Dữ liệu là cấu hình cũ (QR 55–75 px, gần cỡ QR mới ~57 px), chỉ dùng để so bộ phát hiện. Từ 20/11/2026 mặc định là n-detect OpenVINO ×0,75. Bộ phát hiện này không có mask: quad lấy cạnh từ hộp và góc xoay từ hướng gradient (`qr/quad_estimate.py`), đệm 1,15 lần để bước warp bao trọn mã; với đệm này `tests/test_small_qr.py` đọc 12/14 frame mẫu, bằng qrdet-s (đệm 1,06 chỉ đọc 11/14). Vẫn cần đo lại trên bản ghi buồng tối và máy hiện trường (Jetson/CPU).
 
 **Lọc chống đọc sai** (`qr/content_filter.py`, luôn bật): nội dung phải khớp `[0-9]+#[0-9]+` (toàn chuỗi); kết quả zxing phải là QR version 2 mức M; kết quả WeChat (không báo version) phải có 25 ô, đếm qua đường timing; tâm mã phải nằm trong vùng đang đọc, nới 15% (chặn đọc nhầm tem bên cạnh). Mã bị loại ghi log `code_rejected` kèm lý do và không tính phiếu. Kết quả bộ đọc nền cũng qua lọc nội dung.
 

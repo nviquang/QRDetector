@@ -120,6 +120,29 @@ class DetectorTests(unittest.TestCase):
         self.assertIsInstance(det, OnnxQRDetector)
         self.assertEqual((det.scale, det.backend), (0.5, "onnxruntime"))
 
+    @unittest.skipUnless(HAS_OV, "thiếu openvino")
+    def test_default_is_openvino_at_075(self):
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("QR_DETECTOR", None)
+            os.environ.pop("QR_DETECT_SCALE", None)
+            det = improved_pipeline.make_detector()
+        self.assertIsInstance(det, OnnxQRDetector)
+        self.assertEqual((det.backend, det.scale), ("openvino", 0.75))
+
+    @unittest.skipUnless(HAS_ORT, "thiếu onnxruntime")
+    def test_falls_back_to_onnxruntime_when_openvino_missing(self):
+        real = OnnxQRDetector.__init__
+
+        def fake(self, *a, backend="onnxruntime", **kw):
+            if backend == "openvino":
+                raise ImportError("no openvino")
+            real(self, *a, backend=backend, **kw)
+
+        with mock.patch.dict(os.environ, {"QR_DETECTOR": "openvino"}), \
+                mock.patch.object(OnnxQRDetector, "__init__", fake), self.assertLogs("solution.qr", "WARNING"):
+            det = improved_pipeline.make_detector()
+        self.assertEqual(det.backend, "onnxruntime")
+
     def test_unknown_env_value_is_an_error(self):
         with mock.patch.dict(os.environ, {"QR_DETECTOR": "yolo11"}):
             with self.assertRaises(ValueError):

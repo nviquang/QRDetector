@@ -103,9 +103,9 @@ class _OpenVinoRunner:
 
 
 class OnnxQRDetector:
-    def __init__(self, model_path: str = DEFAULT_MODEL, scale: float = 0.6, conf_th: float = 0.3,
+    def __init__(self, model_path: str = DEFAULT_MODEL, scale: float = 0.75, conf_th: float = 0.3,
                  iou_th: float = 0.3, backend: str = "onnxruntime", threads: int | None = None):
-        """scale: tỉ lệ thu ảnh trước khi đưa vào mạng (QR ~57 px → ~34 px ở 0,6).
+        """scale: tỉ lệ thu ảnh trước khi đưa vào mạng (QR ~57 px → ~43 px ở 0,75).
         backend: "onnxruntime" hoặc "openvino". threads: số luồng CPU (None = mặc định của thư viện)."""
         if backend not in BACKENDS:
             raise ValueError(f"backend phải là một trong {BACKENDS}")
