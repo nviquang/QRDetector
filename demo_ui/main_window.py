@@ -286,6 +286,7 @@ class MainWindow(QMainWindow):
             self.cbx_upload.setEnabled(False)
             self.cbx_upload.setToolTip(message)
             self.ui.status_bar.setText(message)
+            self.workspace.set_upload_error(message)
         self.spin_exposure.setValue(s.exposure_ms)
         self.spin_gain.setValue(s.analog_gain)
         self.cbx_conveyor_band.setChecked(s.band_enabled)
@@ -776,6 +777,9 @@ class MainWindow(QMainWindow):
         """Chỉ báo khi có chuyện đáng chú ý: lỗi gửi (thành công là việc bình thường)."""
         if status.last_ok is False:
             self.ui.status_bar.setText(upload_error_text(status))
+            self.workspace.set_upload_error(upload_error_text(status))
+        elif status.last_ok:
+            self.workspace.set_upload_error(None)
 
     def on_decode_failed(self, msg):
         self.ui.status_bar.setText("Decode lỗi: {}".format(msg[:100]))

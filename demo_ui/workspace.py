@@ -243,6 +243,10 @@ class Workspace(QWidget):
         self.lbl_processing = _label("Xử lý —", "footerItem")
         self.lbl_fallback = _label("", "footerItem")
         self.lbl_fallback.hide()
+        self.lbl_upload = _label("", "footerItem")     # lỗi gửi server, giữ tới lần gửi thành công kế tiếp
+        self.lbl_upload.setTextFormat(Qt.PlainText)
+        self.lbl_upload.hide()
+        row.addWidget(self.lbl_upload)
         row.addWidget(self.lbl_fallback)
         row.addWidget(self.lbl_camera)
         row.addWidget(self.lbl_processing)
@@ -337,6 +341,16 @@ class Workspace(QWidget):
     def set_processing_warning(self, text: str):
         self.lbl_processing.setText(text)
         self._set_level(self.lbl_processing, "warn")
+
+    def set_upload_error(self, message: str | None):
+        """None = ẩn (gửi thành công); có lỗi thì hiện rút gọn, đủ câu ở tooltip."""
+        if not message:
+            self.lbl_upload.hide()
+            return
+        self.lbl_upload.setText(message if len(message) <= 60 else message[:59] + "…")
+        self.lbl_upload.setToolTip(message)
+        self.lbl_upload.show()
+        self._set_level(self.lbl_upload, "warn")
 
     @staticmethod
     def _set_level(label: QLabel, level: str):

@@ -361,6 +361,28 @@ class UploadSwitchTests(unittest.TestCase):
         window.on_upload_status(UploadStatus(1, 0, 1, "A", False, "Không tìm thấy tấm"))
         self.assertIn("Không tìm thấy tấm", window.ui.status_bar.text())
 
+    def test_upload_error_stays_on_main_screen_until_next_success(self):
+        window = self.make()
+        label = window.workspace.lbl_upload
+        self.assertTrue(label.isHidden())
+        window.on_upload_status(UploadStatus(1, 0, 1, "A", False, "invalid X-App-Token — kiểm tra giờ máy"))
+        window.ui.status_bar.setText("Camera đã mở.")          # trạng thái camera ghi đè status bar
+        self.assertFalse(label.isHidden())
+        self.assertIn("kiểm tra giờ máy", label.toolTip())
+        self.assertEqual(label.property("level"), "warn")
+        window.on_upload_status(UploadStatus(0, 1, 1, "B", True))
+        self.assertTrue(label.isHidden())
+
+    def test_missing_env_shown_on_main_screen(self):
+        with unittest.mock.patch.object(window_module, "load_api_config", return_value=(None, ["API_KEY"])):
+            window = window_module.MainWindow(settings_path=self._saved_off())
+            window.display_timer.stop()
+            window.fps_timer.stop()
+            window.worker.stop()
+            self.addCleanup(window.close)
+        self.assertFalse(window.workspace.lbl_upload.isHidden())
+        self.assertIn("API_KEY", window.workspace.lbl_upload.toolTip())
+
     def _saved_off(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)

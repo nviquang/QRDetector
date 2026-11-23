@@ -509,6 +509,13 @@ class DualWindowTests(unittest.TestCase):
         self.assertIn("BASE_URL, API_KEY", self.window.cbx_upload.toolTip())
         self.assertIn("API_KEY", self.window.lbl_common.text())
 
+    def test_upload_error_survives_fps_refresh(self):
+        window = self.make()
+        window.on_upload_status(UploadStatus(1, 0, 1, "A", False, "invalid X-App-Token — kiểm tra giờ máy"))
+        window.on_fps_show()                                   # mỗi giây ghi đè lbl_common
+        self.assertFalse(window.workspace.lbl_upload.isHidden())
+        self.assertIn("kiểm tra giờ máy", window.workspace.lbl_upload.toolTip())
+
     def test_upload_error_shows_server_message(self):
         window = self.make()
         window.on_upload_status(UploadStatus(1, 0, 1, "A", False, "Không tìm thấy tấm"))
