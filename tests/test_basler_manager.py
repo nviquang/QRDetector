@@ -3,6 +3,7 @@
 Chạy (từ gốc repo):  python -m unittest tests.test_basler_manager
 """
 from pathlib import Path
+import os
 import sys
 import tempfile
 import threading
@@ -83,6 +84,7 @@ class FakeCamera:
         self.ExposureTime = FakeParam(5000.0, 20.0, 10000.0)
         self.Gain = FakeParam(0.0, 0.0, 36.0)
         self.AcquisitionFrameRateEnable = FakeParam(True)
+        self.AcquisitionFrameRate = FakeParam(50.0, 1.0, 84.0)
         self.OffsetX = FakeParam(8, 0, 16, 4)
         self.OffsetY = FakeParam(4, 0, 8, 4)
         self.Width = FakeParam(2840, 64, 2856, 4)
@@ -282,6 +284,25 @@ class ApplySettingsTests(ManagerCase):
         self.assertEqual(applied["analog_gain"], 6.0)
         self.assertEqual(self.mgr.get_exposure_time(), 6450.0)
         self.assertEqual(self.mgr.get_analog_gain(), 6.0)
+
+    def test_max_fps_env_limits_frame_rate(self):
+        camera = self.open()
+        with patch.dict(os.environ, {"QR_MAX_FPS": "15"}):
+            applied = self.mgr.apply_run_settings(RunSettings(1000.0, 1))
+        self.assertTrue(applied["ok"])
+        self.assertTrue(camera.AcquisitionFrameRateEnable.Value)
+        self.assertEqual((camera.AcquisitionFrameRate.Value, applied["max_fps"]), (15.0, 15.0))
+        self.assertTrue(camera.grabbing)
+
+    def test_max_fps_clamped_and_removed(self):
+        camera = self.open()
+        with patch.dict(os.environ, {"QR_MAX_FPS": "500"}):
+            self.mgr.apply_run_settings(RunSettings(1000.0, 1))
+        self.assertEqual(camera.AcquisitionFrameRate.Value, 84.0)
+        with patch.dict(os.environ, {"QR_MAX_FPS": ""}):
+            applied = self.mgr.apply_run_settings(RunSettings(1000.0, 1))
+        self.assertFalse(camera.AcquisitionFrameRateEnable.Value)
+        self.assertIsNone(applied["max_fps"])
 
     def test_clamps_to_camera_limits(self):
         self.open()

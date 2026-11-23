@@ -1,6 +1,6 @@
 # Chạy QRDetector trên Jetson Nano 4GB
 
-Hướng dẫn chạy app quét QR với **camera Basler** (`main_basler.py`) trên Jetson Nano Developer Kit 4GB. App chạy trong Docker và chỉ dùng CPU. Không cần cài pylon hay MindVision SDK.
+Hướng dẫn chạy app quét QR với **camera Basler** (`main_basler.py`) trên Jetson Nano Developer Kit 4GB. App chạy trong Docker. Bước detect chạy được trên GPU của Jetson bằng TensorRT (mục 4b), hoặc chỉ CPU. Không cần cài pylon hay MindVision SDK.
 
 > **Trạng thái (23/11/2026):** đã làm theo tài liệu trên Jetson Nano 4GB thật (JetPack 4.6.1, L4T R32.7.1):
 >
@@ -23,7 +23,7 @@ Jetson Nano chỉ được NVIDIA hỗ trợ tới JetPack 4.6.x (Ubuntu 18.04).
 
 Image `docker/jetson/Dockerfile` dựa trên Debian bookworm, gồm Python 3.11, glibc 2.36 và PyQt5 lấy từ apt. Nhờ vậy không phải cài lại hệ điều hành hay build Python, Qt từ mã nguồn.
 
-**Không dùng GPU của Jetson.** torch cho Jetson chỉ có bản Python 3.6 của NVIDIA. Từ 20/11/2026 bộ phát hiện mặc định là YOLOv8n ONNX chạy CPU (OpenVINO, thiếu thì tự lùi sang ONNX Runtime), nên image không cài torch hay qrdet. Ô **Dùng GPU** trong app bị khóa là đúng. Đặt `QR_DETECTOR=qrdet` sẽ báo lỗi.
+**GPU nằm ngoài container.** torch và binding Python của TensorRT cho Jetson chỉ có bản Python 3.6, nên image không cài torch hay qrdet (đặt `QR_DETECTOR=qrdet` sẽ báo lỗi). Detect GPU chạy ở tiến trình riêng `tools/trt_service.py` bằng Python 3.6 và TensorRT 8.2 có sẵn của JetPack, trên máy chủ. App trong container gửi ảnh qua `/dev/shm` (mục 4b). Chưa có engine TensorRT thì app detect bằng CPU (OpenVINO, thiếu thì ONNX Runtime) và ô **Dùng GPU** bị khóa.
 
 ## 1. Chuẩn bị Jetson (máy chủ)
 
@@ -92,6 +92,27 @@ docker build -t qrdetector-jetson docker/jetson
 
 Sửa `docker/jetson/` (requirements, Dockerfile, thư viện trong `lib/`) thì build lại. Sửa mã Python thì **không** cần build lại, vì `run.sh` gắn thẳng thư mục repo vào container.
 
+## 4b. Bật GPU (TensorRT)
+
+Tạo engine TensorRT FP16 một lần, ngay trên Jetson (máy chủ, không trong Docker). Mất khoảng 20 phút:
+
+```bash
+tools/build_trt_engine.sh       # tạo qr/models/qrdet_n_detect_fp16.engine
+```
+
+Engine gắn với GPU và phiên bản TensorRT của máy, nên không commit (gitignore `*.engine`). Đổi JetPack hoặc model thì tạo lại.
+
+Có engine thì `run.sh` tự làm hai việc: đặt `QR_DETECTOR=tensorrt`, và nếu dịch vụ chưa chạy thì khởi động `tools/trt_service.py` chạy nền (log ở `logs/trt_service.log`, hoặc `/tmp/qrdetector-trt_service.log` khi `logs/` thuộc root). Dịch vụ chạy tiếp sau khi tắt app, để lần mở sau khỏi mất ~12 s nạp engine. Tắt hẳn bằng `pkill -f tools/trt_service.py`.
+
+- Log app có `qr_detector backend=tensorrt`, chân màn hình hiện GPU.
+- Ô **Dùng GPU** bật/tắt được lúc đang chạy: tắt thì detect bằng OpenVINO.
+- Dịch vụ lỗi hoặc bị tắt thì app tự chuyển sang CPU (log `Lỗi TensorRT khi detect … chuyển detector sang CPU`). Tắt rồi bật lại ô **Dùng GPU** để thử GPU lại.
+- Muốn chạy CPU dù đã có engine: `QR_DETECTOR=openvino docker/jetson/run.sh`.
+
+Engine nhận ảnh sau letterbox có cạnh tối đa 2144 px (2856 × 0,75). Đặt `QR_DETECT_SCALE` lớn hơn 0,75 thì phải sửa `--maxShapes` trong script build, `MAX_SIDE` trong `tools/trt_service.py` và `TRT_MAX_SIDE` trong `qr/detector_onnx.py`.
+
+GPU dùng chung 4 GB RAM với CPU. Chạy app cùng dịch vụ GPU, RAM còn trống khoảng 350 MB (đo 23/11/2026), nên giữ swap 4 GB và đóng trình duyệt.
+
 ## 5. Chạy
 
 Chạy từ terminal trên màn hình của Jetson (cần `DISPLAY`). Khi SSH vào thì đặt `export DISPLAY=:0` trước.
@@ -111,7 +132,7 @@ docker/jetson/run.sh main_dual.py                        # MindVision (A) + Basl
 
 Container chạy bằng root, nên file mới tạo trong `config/` và `logs/` thuộc root. Muốn sửa tay thì dùng `sudo chown -R $USER config logs`.
 
-Biến môi trường đặt trước `run.sh` sẽ được chuyển vào container: `QR_DETECTOR`, `QR_DETECT_SCALE`, `QR_DETECT_THREADS`, `QR_FALLBACK`. Ví dụ:
+Biến môi trường đặt trước `run.sh` sẽ được chuyển vào container: `QR_DETECTOR`, `QR_DETECT_SCALE`, `QR_DETECT_THREADS`, `QR_FALLBACK`, `QR_MAX_FPS`. `run.sh` mặc định `QR_MAX_FPS=15` (giới hạn fps camera Basler, xem mục 6); `QR_MAX_FPS=0` để bỏ giới hạn. Ví dụ:
 
 ```bash
 QR_DETECTOR=onnx QR_DETECT_THREADS=4 docker/jetson/run.sh
@@ -132,13 +153,15 @@ Jetson Nano chỉ có 4 nhân Cortex-A57 1,43 GHz. Đo ngày 23/11/2026 ở ch�
 
 | Bộ phát hiện | Jetson Nano | Ryzen 5 5500U (`README.md`) |
 |---|---:|---:|
-| OpenVINO | 1474 ms | 144 ms |
-| ONNX Runtime | 1912 ms | 182 ms |
+| TensorRT FP16 (GPU), trọn vòng từ app | 332 ms | — |
+| OpenVINO (CPU) | 1474 ms | 144 ms |
+| ONNX Runtime (CPU) | 1912 ms | 182 ms |
 
-Detect chậm hơn khoảng 10 lần so với máy bàn. Ở chế độ đọc nhiều frame, YOLO chạy tối đa mỗi 400 ms, nên trên Nano thực tế khoảng 1,5 s một lần. Tem đi qua dải 600 mm ở 100 mm/s mất khoảng 6 s, tức được detect khoảng 4 lần. Bước cascade và đọc nền còn tốn thêm CPU, **chưa đo tỉ lệ đọc**. Xem thời gian detect và cascade trên nhãn trạng thái của app. Cách đo không cần băng chuyền là chạy `main_replay.py` với một bản ghi. Các nút chỉnh, theo thứ tự nên thử:
+Số TensorRT đo từ trong container, gồm cả letterbox, chép qua `/dev/shm` và NMS. Riêng phần GPU (trtexec) mất 348 ms. Bằng CPU, detect chậm hơn máy bàn khoảng 10 lần. Ở chế độ đọc nhiều frame YOLO chạy tối đa mỗi 400 ms, nên với GPU thực tế khoảng 0,4 s một lần, với CPU khoảng 1,5 s một lần. Tem đi qua dải 600 mm ở 100 mm/s mất khoảng 6 s, tức được detect khoảng 15 lần với GPU, khoảng 4 lần với CPU. Bước cascade và đọc nền còn tốn thêm CPU, **chưa đo tỉ lệ đọc**. Xem thời gian detect và cascade trên nhãn trạng thái của app. Cách đo không cần băng chuyền là chạy `main_replay.py` với một bản ghi. Các nút chỉnh, theo thứ tự nên thử:
 
 | Chỉnh | Tác dụng | Đánh đổi |
 |---|---|---|
+| `QR_MAX_FPS` (mặc định 15 trong `run.sh`) | giảm CPU cho việc nhận ảnh. Ở ~84 fps, luồng USB của pylon, đổi Mono8 sang BGR và vẽ giao diện chiếm khoảng 1,6/4 nhân, làm detect chậm từ 1,5 s lên ~6 s (đo 23/11/2026) | fps thấp quá thì tem di chuyển nhiều px giữa hai frame; 15 fps ở 120 mm/s là ~14 px/frame, tracker cho tới 30 |
 | Vùng đọc (dải y, tab Băng chuyền) hẹp sát buồng tối | ảnh nhỏ hơn: detect nhanh hơn và USB nhẹ hơn | đặt sai dải thì mất tem ở mép |
 | Ô **N** (decode mỗi N frame) | giảm tải đều | N lớn quá thì lượt ngắn có ít frame để đọc |
 | `QR_DETECT_THREADS=4` | dùng đủ 4 nhân cho detect | tranh CPU với cascade và đọc nền |
@@ -158,4 +181,6 @@ Detect chậm hơn khoảng 10 lần so với máy bàn. Ở chế độ đọc 
 | `pip install` trong lúc build đòi biên dịch (`Building wheel for …`) | Không có wheel cho tổ hợp này. Kiểm tra image là Debian bookworm arm64 (`uname -m` trong container ra `aarch64`) và đúng phiên bản trong `requirements.txt`. |
 | Camera Basler mất frame, lỗi grab | Chưa nâng `usbfs_memory_mb` (bước 1.4), camera cắm qua hub, hoặc nguồn yếu. Dùng nguồn 4 A qua jack tròn. |
 | App bị kill hoặc treo khi chạy lâu | Hết RAM. Kiểm tra swap (`free -h`), tắt đọc nền (`QR_FALLBACK=off`), đóng trình duyệt trên Jetson. |
+| Log toàn `pass_unconfirmed … votes=1` và `observations=1`: app đọc được mã nhưng không báo | Mỗi lượt chỉ có 1 lần quan sát vì xử lý một frame lâu hơn thời gian giữ lượt. Từ 23/11/2026 thời gian giữ lượt tự giãn theo nhịp xử lý (sau 3 frame đầu); nếu vẫn gặp, kiểm tra `QR_MAX_FPS` đã có hiệu lực (log `run_settings … max_fps=15`) và tải CPU (`top`). |
+| Log `Không dùng được bộ phát hiện tensorrt (… /dev/shm/qrdetector-trt.in)` | Dịch vụ TensorRT chưa chạy hoặc đã tắt. Xem log dịch vụ (mục 4b) rồi mở lại app bằng `run.sh`, hoặc chạy tay `python3 tools/trt_service.py`. |
 | Server trả 403 `invalid X-App-Token` | Giờ máy lệch. Kiểm tra `timedatectl`. Container dùng đồng hồ của máy chủ. |

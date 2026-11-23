@@ -1,4 +1,5 @@
-"""Bộ phát hiện QR YOLOv8n detect (chuyển từ qrdet-n, ``tools/export_qrdet_detect.py``) chạy ONNX Runtime hoặc OpenVINO.
+"""Bộ phát hiện QR YOLOv8n detect (chuyển từ qrdet-n, ``tools/export_qrdet_detect.py``) chạy ONNX Runtime, OpenVINO, hoặc
+TensorRT trên GPU Jetson qua dịch vụ ``tools/trt_service.py`` (``backend="tensorrt"``).
 
 Không cần torch/ultralytics lúc chạy. Ảnh được thu theo **tỉ lệ cố định** ``scale`` (không theo imgsz) rồi đệm về bội
 32: QR ~57 px ở 0,56 mm/px còn ~34 px ở scale 0,6. Giao diện giống ``qr.detector.QRDetector`` (``detect``, ``warmup``,
@@ -10,6 +11,9 @@ from __future__ import annotations
 
 import logging
 import os
+import socket
+import struct
+import threading
 
 import cv2
 import numpy as np
@@ -22,7 +26,15 @@ logger = logging.getLogger("solution.qr")
 DEFAULT_MODEL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "qrdet_n_detect.onnx")
 STRIDE = 32
 PAD_VALUE = 114
-BACKENDS = ("onnxruntime", "openvino")
+BACKENDS = ("onnxruntime", "openvino", "tensorrt")
+# Giao thức với tools/trt_service.py (giữ khớp hai bên)
+TRT_SOCKET = "/dev/shm/qrdetector-trt.sock"
+TRT_SHM = "/dev/shm/qrdetector-trt.in"
+TRT_MAGIC = b"QRT1"
+TRT_REQUEST = struct.Struct("<4sII")
+TRT_RESPONSE = struct.Struct("<4sIII")
+TRT_MAX_SIDE = 2144
+TRT_TIMEOUT_S = 10.0
 
 
 def letterbox_shape(h: int, w: int, scale: float) -> tuple[int, int, int, int]:
@@ -102,33 +114,109 @@ class _OpenVinoRunner:
         return compiled(tensor)[compiled.outputs[0]]
 
 
+class _TrtClient:
+    """Gửi tensor sang dịch vụ TensorRT trên máy chủ: ghi float16 vào file chia sẻ ``/dev/shm``, báo (H, W) qua
+    Unix socket, nhận đầu ra 5×N. Một kết nối, dùng tuần tự (khóa) — app chỉ có một thread detect."""
+
+    def __init__(self, socket_path: str = TRT_SOCKET, shm_path: str = TRT_SHM):
+        import mmap
+        self._socket_path = socket_path
+        self._lock = threading.Lock()
+        self._shm_file = open(shm_path, "r+b")
+        self._shm = mmap.mmap(self._shm_file.fileno(), 0)
+        self._sock = None
+        self._connect()
+
+    def _connect(self):
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.settimeout(TRT_TIMEOUT_S)
+        sock.connect(self._socket_path)
+        self._sock = sock
+
+    def _recv(self, n: int) -> bytes:
+        buf = bytearray()
+        while len(buf) < n:
+            chunk = self._sock.recv(n - len(buf))
+            if not chunk:
+                raise ConnectionError("dịch vụ TensorRT đóng kết nối")
+            buf.extend(chunk)
+        return bytes(buf)
+
+    def __call__(self, tensor: np.ndarray) -> np.ndarray:
+        _, _, h, w = tensor.shape
+        if h > TRT_MAX_SIDE or w > TRT_MAX_SIDE:
+            raise RuntimeError(f"ảnh {w}x{h} sau letterbox vượt {TRT_MAX_SIDE} của engine TensorRT")
+        half = np.ascontiguousarray(tensor, np.float16)
+        with self._lock:
+            np.frombuffer(self._shm, np.float16, half.size)[:] = half.reshape(-1)
+            if self._sock is None:
+                self._connect()
+            try:
+                self._sock.sendall(TRT_REQUEST.pack(TRT_MAGIC, h, w))
+                magic, status, rows, cols = TRT_RESPONSE.unpack(self._recv(TRT_RESPONSE.size))
+                if magic != TRT_MAGIC:
+                    raise ConnectionError("dịch vụ TensorRT trả sai giao thức")
+                if status != 0:
+                    raise RuntimeError("TensorRT: " + self._recv(cols).decode("utf-8", "replace"))
+                out = np.frombuffer(self._recv(rows * cols * 4), np.float32).reshape(1, rows, cols)
+            except OSError:
+                self._sock.close()
+                self._sock = None
+                raise
+        return out
+
+
 class OnnxQRDetector:
     def __init__(self, model_path: str = DEFAULT_MODEL, scale: float = 0.75, conf_th: float = 0.3,
                  iou_th: float = 0.3, backend: str = "onnxruntime", threads: int | None = None):
         """scale: tỉ lệ thu ảnh trước khi đưa vào mạng (QR ~57 px → ~43 px ở 0,75).
-        backend: "onnxruntime" hoặc "openvino". threads: số luồng CPU (None = mặc định của thư viện)."""
+        backend: "onnxruntime", "openvino" hoặc "tensorrt" (GPU Jetson qua tools/trt_service.py; kết nối lỗi thì
+        ném OSError để make_detector lùi về CPU). threads: số luồng CPU (None = mặc định của thư viện)."""
         if backend not in BACKENDS:
             raise ValueError(f"backend phải là một trong {BACKENDS}")
         if not os.path.isfile(model_path):
             raise FileNotFoundError(f"thiếu model {model_path} — chạy tools/export_qrdet_detect.py")
         self.scale, self.conf_th, self.iou_th, self.backend = scale, conf_th, iou_th, backend
-        self._run = (_OrtRunner if backend == "onnxruntime" else _OpenVinoRunner)(model_path, threads)
+        self._model_path, self._threads = model_path, threads
+        self._cpu_run = None
+        if backend == "tensorrt":
+            self._gpu_run = _TrtClient()
+            self._run = self._gpu_run
+        else:
+            self._gpu_run = None
+            self._run = (_OrtRunner if backend == "onnxruntime" else _OpenVinoRunner)(model_path, threads)
+            self._cpu_run = self._run
+        self._device = "cuda:trt" if backend == "tensorrt" else "cpu"
         logger.info("qr_detector backend=%s scale=%.2f conf=%.2f model=%s", backend, scale, conf_th,
                     os.path.basename(model_path))
 
     # cùng giao diện QRDetector -------------------------------------------------
     @property
     def device(self) -> str:
-        return "cpu"
+        return self._device
 
     @property
     def gpu_available(self) -> bool:
-        return False
+        return self._gpu_run is not None
+
+    def _cpu_runner(self):
+        if self._cpu_run is None:
+            try:
+                self._cpu_run = _OpenVinoRunner(self._model_path, self._threads)
+            except ImportError:
+                self._cpu_run = _OrtRunner(self._model_path, self._threads)
+        return self._cpu_run
 
     def set_device(self, device: str):
-        """Chỉ chạy CPU; giữ để ImprovePipeline.set_device không lỗi."""
-        if device not in ("auto", "cpu"):
-            logger.warning("OnnxQRDetector chỉ chạy CPU, bỏ qua device=%s", device)
+        """Backend tensorrt: "cpu" chuyển sang OpenVINO/ONNX Runtime, "auto"/"cuda…" về GPU. Backend CPU: bỏ qua."""
+        if self._gpu_run is None:
+            if device not in ("auto", "cpu"):
+                logger.warning("OnnxQRDetector chỉ chạy CPU, bỏ qua device=%s", device)
+            return
+        use_gpu = device != "cpu"
+        self._run = self._gpu_run if use_gpu else self._cpu_runner()
+        self._device = "cuda:trt" if use_gpu else "cpu"
+        logger.info("qr_detector device=%s", self._device)
 
     def warmup(self, shape: tuple[int, int] = (1072, 2856)):
         self.detect(np.zeros((shape[0], shape[1], 3), np.uint8))
@@ -137,7 +225,15 @@ class OnnxQRDetector:
         if image_bgr.ndim == 2:
             image_bgr = cv2.cvtColor(image_bgr, cv2.COLOR_GRAY2BGR)
         tensor, pad = preprocess(image_bgr, self.scale)
-        found = postprocess(self._run(tensor), self.scale, self.conf_th, self.iou_th, image_bgr.shape[:2], pad)
+        try:
+            out = self._run(tensor)
+        except (OSError, RuntimeError) as e:     # dịch vụ TensorRT tắt/lỗi → chạy hẳn CPU, như QRDetector khi CUDA lỗi
+            if self._run is not self._gpu_run:
+                raise
+            logger.warning("Lỗi TensorRT khi detect (%s) — chuyển detector sang CPU", e)
+            self._run, self._device = self._cpu_runner(), "cpu"
+            out = self._run(tensor)
+        found = postprocess(out, self.scale, self.conf_th, self.iou_th, image_bgr.shape[:2], pad)
         if not found:
             return []
         gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)

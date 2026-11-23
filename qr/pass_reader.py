@@ -34,6 +34,14 @@ FAST_EVERY_N = 2            # nhịp gửi frame khi có lượt chờ đọc
 UNKNOWN_EXPOSURE_BLUR_PX = [2.0, 3.0, 4.5, 6.5]
 MIN_BLUR_PX = 1.5
 DRAIN_STEP_S = 0.25     # flush chờ bộ đọc nền từng quãng này để báo giai đoạn mới
+# Máy chậm (Jetson Nano: detect ~1,5 s, camera ~84 fps) gửi frame cách nhau vài trăm seq, vượt max_gap 100 của
+# tracker mặc định nên mỗi lượt chỉ có 1 lần quan sát và không bao giờ đủ 2 phiếu. max_gap được nới tới
+# GAP_INTERVALS × trung vị khoảng seq giữa hai frame xử lý gần nhất (đủ GAP_MIN_SAMPLES mẫu, để một lần nhảy seq
+# đơn lẻ — camera tạm dừng, frame cuối của lượt — không làm lượt kéo dài), không quá MAX_ADAPTIVE_GAP.
+GAP_INTERVALS = 3
+GAP_WINDOW = 7
+GAP_MIN_SAMPLES = 3
+MAX_ADAPTIVE_GAP = 3000
 
 
 @dataclass
@@ -109,6 +117,8 @@ class PassReader:
         self._code_pattern = getattr(pipeline, "code_pattern", None)
         self._tracker = tracker if tracker is not None else PassTracker(
             max_gap=100, max_speed_px=30.0, strict=multi_frame)
+        self._base_gap = self._tracker.max_gap if tracker is None else None   # None = không tự nới
+        self._intervals: list[int] = []          # khoảng seq giữa các frame được xử lý gần nhất
         self._min_votes = min_votes
         self._clock = clock
         self._exposure_ms: float | None = None
@@ -172,6 +182,8 @@ class PassReader:
         if self._last_idx is not None and (frame_idx < self._last_idx or shape != self._shape):
             finished += self._close(self._tracker.finish())   # camera mở lại / đổi ROI
             self._last_seen = None
+        elif self._last_idx is not None:
+            self._adapt_gap(frame_idx - self._last_idx)
         self._last_idx, self._shape = frame_idx, shape
 
         if self._decoder is not None:
@@ -255,6 +267,15 @@ class PassReader:
             return True
         side_w, side_h = x2 - x1, y2 - y1
         return min(side_w, side_h) <= 0 or max(side_w, side_h) / min(side_w, side_h) > 1.7
+
+    def _adapt_gap(self, interval: int):
+        if self._base_gap is None or interval <= 0:
+            return
+        self._intervals = (self._intervals + [interval])[-GAP_WINDOW:]
+        if len(self._intervals) < GAP_MIN_SAMPLES:
+            return
+        median = float(np.median(self._intervals))
+        self._tracker.max_gap = int(min(MAX_ADAPTIVE_GAP, max(self._base_gap, GAP_INTERVALS * median)))
 
     def _measure_seq_rate(self, frame_idx: int, now: float):
         if self._last_seen is not None:

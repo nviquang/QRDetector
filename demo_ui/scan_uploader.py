@@ -1,6 +1,7 @@
 """ScanUploader — gửi mã QR lên API báo cáo tấm qua hàng đợi, thuần Python (không Qt).
 
-``POST {BASE_URL}/api/v1/production/camera/product-item-reports`` với body ``{"productItemCode": mã}``,
+``POST {BASE_URL}/api/v1/production/camera/product-item-reports`` với body ``{"productItemCode": mã}`` (mã = phần
+sau dấu ``#`` nếu có, xem ``product_item_code``),
 header ``X-App-Token`` (HMAC-SHA256 theo phút, tính lại mỗi lần gửi) và ``X-Api-Key`` — xem
 ``docs/camera-integration.md``. Một thread nền lấy từng mục trong hàng đợi nên mạng chậm không chặn decode.
 Chống gửi trùng: mã đã chờ hoặc đã gửi thành công trong ``dedup_ttl`` giây bị bỏ qua; lỗi tạm thời (mạng,
@@ -57,6 +58,13 @@ def upload_error_text(status: UploadStatus) -> str:
     return "Gửi mã {} lỗi: {} ({} mã chờ)".format(status.last_text, status.last_error or "không rõ", status.pending)
 
 
+def product_item_code(text: str) -> str:
+    """Mã gửi lên server: phần sau dấu ``#`` đầu tiên (tem dạng ``<số>#<mã tấm>``); không có ``#`` hoặc phần sau
+    rỗng thì gửi nguyên chuỗi. Chống gửi trùng vẫn theo nội dung QR đầy đủ."""
+    head, sep, tail = text.partition("#")
+    return tail.strip() if sep and tail.strip() else text
+
+
 def make_app_token(secret: str, method: str, path: str, now_ms: int) -> str:
     timestamp = now_ms // 60000 * 60000                 # làm tròn xuống đầu phút
     message = "{}\n{}\n{}".format(timestamp, method, path)
@@ -94,7 +102,7 @@ class ReportClient:
             headers["Authorization"] = self._authorization
         request = urllib.request.Request(
             self._url, method="POST",
-            data=json.dumps({"productItemCode": code}, ensure_ascii=False).encode("utf-8"), headers=headers)
+            data=json.dumps({"productItemCode": product_item_code(code)}, ensure_ascii=False).encode("utf-8"), headers=headers)
         try:
             with self._opener(request, timeout=self._timeout) as response:
                 body = response.read()

@@ -95,22 +95,24 @@ def make_detector(model_size: str = "s", conf_th: float = 0.3, imgsz: int = 1280
     - ``openvino`` (mặc định) / ``onnx``: YOLOv8n detect chuyển từ qrdet-n (``qr/models/qrdet_n_detect.onnx``), CPU,
       không cần torch; tỉ lệ thu ``QR_DETECT_SCALE`` (mặc định 0,75), số luồng ``QR_DETECT_THREADS``. Đo 19/11/2026:
       recall 99,7% so với qrdet-s, 144 ms so với 305 ms (README, mục Bản demo dùng camera Basler);
+    - ``tensorrt``: cùng model, GPU Jetson qua dịch vụ ``tools/trt_service.py`` (docs/jetson-nano.md);
     - ``qrdet``: qrdet-s YOLOv8-seg trên torch (GPU nếu có), ``model_size``/``imgsz`` như cũ.
-    Thiếu thư viện hoặc file model thì lùi dần openvino → onnxruntime → qrdet và ghi cảnh báo.
+    Thiếu thư viện, file model hoặc dịch vụ thì lùi dần (tensorrt →) openvino → onnxruntime → qrdet và ghi cảnh báo.
     """
     kind = os.environ.get("QR_DETECTOR", DEFAULT_DETECTOR).strip().lower()
-    if kind not in ("qrdet", "onnx", "onnxruntime", "openvino"):
-        raise ValueError(f"QR_DETECTOR={kind!r} không hợp lệ (qrdet | onnx | openvino)")
+    if kind not in ("qrdet", "onnx", "onnxruntime", "openvino", "tensorrt"):
+        raise ValueError(f"QR_DETECTOR={kind!r} không hợp lệ (qrdet | onnx | openvino | tensorrt)")
     if kind != "qrdet":
         from .detector_onnx import OnnxQRDetector
         threads = os.environ.get("QR_DETECT_THREADS")
         scale = float(os.environ.get("QR_DETECT_SCALE", str(DEFAULT_DETECT_SCALE)))
-        backends = ["openvino", "onnxruntime"] if kind == "openvino" else ["onnxruntime"]
+        backends = {"tensorrt": ["tensorrt", "openvino", "onnxruntime"],
+                    "openvino": ["openvino", "onnxruntime"]}.get(kind, ["onnxruntime"])
         for backend in backends:
             try:
                 return OnnxQRDetector(scale=scale, conf_th=conf_th, backend=backend,
                                       threads=int(threads) if threads else None)
-            except (ImportError, FileNotFoundError, RuntimeError) as e:
+            except (ImportError, OSError, RuntimeError) as e:     # OSError: gồm thiếu file, dịch vụ TensorRT chưa chạy
                 logger.warning("Không dùng được bộ phát hiện %s (%s) — thử phương án kế tiếp", backend, e)
     return QRDetector(model_size=model_size, conf_th=conf_th, imgsz=imgsz, device=device, half=half)
 

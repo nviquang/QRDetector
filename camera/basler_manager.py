@@ -8,6 +8,7 @@ capture thread đứng ngoài lúc cấu hình. Getter đọc giá trị đã ca
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
 
@@ -22,6 +23,17 @@ logger = logging.getLogger("solution.camera")
 GRAB_TIMEOUT_MS = 1000
 ERROR_LOG_INTERVAL_S = 5.0
 PORT_NAMES = {"BaslerUsb": "USB", "BaslerGigE": "GigE", "BaslerCamEmu": "Emulation"}
+
+
+def max_fps() -> float | None:
+    """Giới hạn fps camera từ biến môi trường ``QR_MAX_FPS`` (rỗng/0 = không giới hạn). Máy yếu (Jetson Nano) cần
+    giới hạn: ở ~84 fps riêng nhận ảnh và chuyển BGR đã chiếm khoảng 1,6/4 nhân, detect chậm từ 1,5 s lên ~6 s."""
+    try:
+        value = float(os.environ.get("QR_MAX_FPS", "") or 0)
+    except ValueError:
+        logger.warning("QR_MAX_FPS=%r không hợp lệ, bỏ qua", os.environ.get("QR_MAX_FPS"))
+        return None
+    return value if value > 0 else None
 
 
 class BaslerDevice:
@@ -280,22 +292,28 @@ class BaslerCameraManager:
         return int(value - (value - param.Min) % param.Inc)
 
     def apply_run_settings(self, settings: RunSettings) -> dict | None:
-        """Tắt tự động, exposure (µs) + gain (dB) cố định kẹp theo camera, fps cao nhất, vùng đọc."""
+        """Tắt tự động, exposure (µs) + gain (dB) cố định kẹp theo camera, fps cao nhất (hoặc ``QR_MAX_FPS``),
+        vùng đọc."""
         with self._sdk_lock:
             camera = self.handle
             if camera is None or not self._running:
                 return None
             ok = self._set("ExposureAuto", "Off", required=False)
             ok = self._set("GainAuto", "Off", required=False) and ok
+            fps_limit = None
             try:
                 ok = self._set_clamped("ExposureTime", settings.exposure_us) and ok
                 ok = self._set_clamped("Gain", settings.analog_gain) and ok
                 target = self._target_window(settings)
-                restart = target != self._window or bool(camera.AcquisitionFrameRateEnable.Value)
+                fps_limit = max_fps()
+                restart = (target != self._window
+                           or bool(camera.AcquisitionFrameRateEnable.Value) != (fps_limit is not None))
                 if restart:
                     camera.StopGrabbing()
                 try:
-                    ok = self._set("AcquisitionFrameRateEnable", False) and ok
+                    ok = self._set("AcquisitionFrameRateEnable", fps_limit is not None) and ok
+                    if fps_limit is not None:
+                        ok = self._set_clamped("AcquisitionFrameRate", fps_limit) and ok
                     if target != self._window:
                         ok = self._apply_window(target) and ok
                 finally:
@@ -307,6 +325,6 @@ class BaslerCameraManager:
                 logger.error("apply_run_settings failed detail=%s", exc)
                 ok = False
             applied = dict(ok=ok, exposure_us=self._exposure_us, analog_gain=self._gain,
-                           resolution=self.get_resolution())
+                           resolution=self.get_resolution(), max_fps=fps_limit if ok else None)
         logger.info("run_settings requested=%r applied=%r", settings, applied)
         return applied

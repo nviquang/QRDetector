@@ -15,7 +15,7 @@ sys.path.insert(0, str(ROOT))
 
 from demo_ui.api_config import ApiConfig  # noqa: E402
 from demo_ui.scan_uploader import (REPORT_PATH, PermanentError, ReportClient, ScanUploader,  # noqa: E402
-                                   TransientError, make_app_token)
+                                   TransientError, make_app_token, product_item_code)
 
 
 class Clock:
@@ -227,10 +227,20 @@ class ReportClientTests(unittest.TestCase):
         client(opener, ApiConfig("https://x.test/", "s", "k"))("A")
         self.assertNotIn("//api", opener.calls[0][0].full_url)
 
-    def test_body_sends_code_verbatim(self):
+    def test_body_sends_part_after_hash(self):
         opener = FakeOpener()
-        client(opener)("12 #34é")
-        self.assertEqual(json.loads(opener.calls[0][0].data), {"productItemCode": "12 #34é"})
+        client(opener)("10000100000500#000000001634")
+        self.assertEqual(json.loads(opener.calls[0][0].data), {"productItemCode": "000000001634"})
+
+    def test_body_sends_code_without_hash_verbatim(self):
+        opener = FakeOpener()
+        client(opener)("000000585546é")
+        self.assertEqual(json.loads(opener.calls[0][0].data), {"productItemCode": "000000585546é"})
+
+    def test_product_item_code(self):
+        self.assertEqual(product_item_code("1#2#3"), "2#3")       # chỉ tách ở dấu # đầu tiên
+        self.assertEqual(product_item_code("12#"), "12#")         # phần sau rỗng: gửi nguyên chuỗi
+        self.assertEqual(product_item_code("12"), "12")
 
     def test_returns_warning(self):
         warning = "Tấm đã được quét trước đó, số lần quét đã tăng"

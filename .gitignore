@@ -41,3 +41,7 @@ qr/models/qrdet_n_seg.onnx
 
 # Thư viện MindVision chép vào khi build image Jetson
 docker/jetson/lib/*.so*
+
+# Engine TensorRT tạo trên từng Jetson (tools/build_trt_engine.sh)
+*.engine
+*.engine.tmp

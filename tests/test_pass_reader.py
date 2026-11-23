@@ -191,5 +191,40 @@ class PassReaderTests(unittest.TestCase):
         self.assertIsNone(ov.at(5, (768, 2448), max_age=100))     # seq lùi (camera mở lại)
 
 
+
+class AdaptiveGapTests(unittest.TestCase):
+    """Máy chậm (Jetson Nano) xử lý frame cách nhau vài trăm seq: lượt không được đóng giữa hai lần quan sát."""
+
+    def test_slow_processing_keeps_one_pass(self):
+        pipe = FakePipeline([[]] * 4 + [[detection_at(500, 300)]] * 3, ["A"])
+        reader = PassReader(pipe)
+        finished = []
+        for seq in range(0, 2100, 300):          # 4 frame trống để đo nhịp, rồi QR ở 3 frame
+            finished += reader.process(IMG, seq).finished
+        self.assertEqual(finished, [])
+        self.assertEqual(reader._tracker.max_gap, 900)
+        (track,) = reader.flush()
+        self.assertEqual(track.observations, 3)
+        self.assertGreaterEqual(track.votes, 2)
+
+    def test_single_seq_jump_does_not_widen_gap(self):
+        reader = PassReader(FakePipeline([[]] * 4, ["A"]))
+        for seq in (0, 5, 10, 500):
+            reader.process(IMG, seq)
+        self.assertEqual(reader._tracker.max_gap, 100)
+
+    def test_fast_processing_keeps_default_gap(self):
+        reader = PassReader(FakePipeline(moving(5), ["A"]))
+        for seq in range(0, 25, 5):
+            reader.process(IMG, seq)
+        self.assertEqual(reader._tracker.max_gap, 100)
+
+    def test_custom_tracker_gap_not_changed(self):
+        reader = PassReader(FakePipeline([[detection_at(500, 300)]] * 2, ["A"]), tracker=PassTracker(max_gap=5))
+        reader.process(IMG, 0)
+        reader.process(IMG, 300)
+        self.assertEqual(reader._tracker.max_gap, 5)
+
+
 if __name__ == "__main__":
     unittest.main()
