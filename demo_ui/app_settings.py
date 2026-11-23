@@ -50,7 +50,6 @@ _VALID = {
     "band_w": _is_int(16, 4096),
     "upload_enabled": _is_bool,
     "upload_base_url": lambda v: isinstance(v, str) and v.startswith(("http://", "https://")),
-    "keyboard_output_enabled": _is_bool,
 }
 
 
@@ -83,7 +82,6 @@ class AppSettings:
     band_x: int = 0
     band_w: int = 2448
     upload_enabled: bool = True     # gửi mã QR đọc được lên API
-    keyboard_output_enabled: bool = False   # gõ mã vào ô đang chọn của ứng dụng khác
     upload_base_url: str = DEFAULT_BASE_URL
 
     @classmethod

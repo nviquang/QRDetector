@@ -241,12 +241,9 @@ class Workspace(QWidget):
         row.addStretch(1)
         self.lbl_camera = _label("Camera —", "footerItem")
         self.lbl_processing = _label("Xử lý —", "footerItem")
-        self.lbl_keyboard = _label("", "footerItem")
-        self.lbl_keyboard.hide()
         self.lbl_fallback = _label("", "footerItem")
         self.lbl_fallback.hide()
         row.addWidget(self.lbl_fallback)
-        row.addWidget(self.lbl_keyboard)
         row.addWidget(self.lbl_camera)
         row.addWidget(self.lbl_processing)
         return bar
@@ -340,12 +337,6 @@ class Workspace(QWidget):
     def set_processing_warning(self, text: str):
         self.lbl_processing.setText(text)
         self._set_level(self.lbl_processing, "warn")
-
-    def set_keyboard_status(self, message: str, ok: bool):
-        self.lbl_keyboard.setText(message if len(message) <= 48 else message[:47] + "…")
-        self.lbl_keyboard.setToolTip(message)
-        self.lbl_keyboard.show()
-        self._set_level(self.lbl_keyboard, "ok" if ok else "warn")
 
     @staticmethod
     def _set_level(label: QLabel, level: str):

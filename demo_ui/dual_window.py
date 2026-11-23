@@ -192,14 +192,12 @@ class _Channel:
 
 class DualWindow(QMainWindow):
     upload_status = pyqtSignal(object)      # UploadStatus từ thread gửi → GUI thread
-    keyboard_status = pyqtSignal(object)    # KeyStatus từ thread gõ → GUI thread
 
     def __init__(self, settings_path: Path | None = None, uploader: ScanUploader | None = None,
-                 cameras: tuple | None = None, pipeline=None, keyboard_typer=None):
+                 cameras: tuple | None = None, pipeline=None):
         """settings_path: file JSON; None = không đọc/ghi file và không tạo uploader (dùng trong test).
 
         cameras: (camera A, camera B), mặc định MindVision và Basler; pipeline: test truyền bản giả.
-        keyboard_typer: có thì hiện ô gõ mã vào ô đang chọn (dùng chung hai camera); None = không có.
         """
         super().__init__()
         self._settings_path = settings_path
@@ -208,9 +206,6 @@ class DualWindow(QMainWindow):
         if uploader is None and settings_path:
             uploader = ScanUploader(base_url=common.upload_base_url, on_status=self.upload_status.emit)
         self.uploader = uploader
-        self.keyboard_typer = keyboard_typer
-        if keyboard_typer is not None:
-            keyboard_typer.on_status = self.keyboard_status.emit
         self.pipeline = pipeline if pipeline is not None else ImprovePipeline(device=_device_for(common.use_gpu))
         self.worker = DualDecodeWorker(self.pipeline)
         self.stats = MergedStats()
@@ -257,12 +252,6 @@ class DualWindow(QMainWindow):
         self.cbx_upload.setToolTip("Mã trùng trong 30 giây chỉ gửi một lần. Tắt thì mã đọc được không gửi đi.")
         for widget in (self.cbx_decode, self.cbx_quad, self.cbx_gpu, self.cbx_upload):
             layout.addWidget(widget)
-        self.cbx_keyboard = None
-        if self.keyboard_typer is not None:
-            self.cbx_keyboard = QCheckBox("Gõ mã vào ô đang chọn")
-            self.cbx_keyboard.setToolTip("Đọc được mã ở camera nào cũng gõ vào ô đang có con trỏ ở ứng dụng khác "
-                                         "rồi nhấn Enter. Mã trùng trong 30 giây chỉ gõ một lần.")
-            layout.addWidget(self.cbx_keyboard)
         self.lbl_common = QLabel("")
         self.lbl_common.setWordWrap(True)
         layout.addWidget(self.lbl_common)
@@ -315,9 +304,6 @@ class DualWindow(QMainWindow):
         self.cbx_gpu.setEnabled(gpu_available)
         self.cbx_upload.setChecked(common.upload_enabled)
         self.on_upload_toggled(common.upload_enabled)
-        if self.cbx_keyboard is not None:
-            self.cbx_keyboard.setChecked(common.keyboard_output_enabled)
-            self.keyboard_typer.set_enabled(common.keyboard_output_enabled)
         for ch in self.channels:
             ch.panel.load(ch.settings)
         self._settings_timer = QTimer(self)
@@ -325,8 +311,6 @@ class DualWindow(QMainWindow):
         self._settings_timer.setInterval(SETTINGS_SAVE_DELAY_MS)
         self._settings_timer.timeout.connect(self._save_settings)
         signals = [self.cbx_decode.toggled, self.cbx_quad.toggled, self.cbx_gpu.toggled, self.cbx_upload.toggled]
-        if self.cbx_keyboard is not None:
-            signals.append(self.cbx_keyboard.toggled)
         for ch in self.channels:
             signals += ch.panel.change_signals()
         for signal in signals:
@@ -340,9 +324,6 @@ class DualWindow(QMainWindow):
         self.worker.passes.connect(self.on_passes_done)
         self.worker.flushed.connect(self.on_flushed)
         self.upload_status.connect(self.on_upload_status)
-        self.keyboard_status.connect(self.on_keyboard_status)
-        if self.cbx_keyboard is not None:
-            self.cbx_keyboard.toggled.connect(self.keyboard_typer.set_enabled)
         self.cbx_decode.toggled.connect(self.on_decode_toggled)
         self.cbx_gpu.toggled.connect(lambda checked: self.pipeline.set_device(_device_for(checked)))
         self.cbx_upload.toggled.connect(self.on_upload_toggled)
@@ -369,8 +350,6 @@ class DualWindow(QMainWindow):
         if self.cbx_gpu.isEnabled():     # máy không có CUDA: giữ lựa chọn đã lưu
             common.use_gpu = self.cbx_gpu.isChecked()
         common.upload_enabled = self.cbx_upload.isChecked()
-        if self.cbx_keyboard is not None:
-            common.keyboard_output_enabled = self.cbx_keyboard.isChecked()
         for ch in self.channels:
             ch.panel.collect(ch.settings)
 
@@ -581,8 +560,6 @@ class DualWindow(QMainWindow):
         self.worker.stop()
         if self.uploader is not None:
             self.uploader.stop()
-        if self.keyboard_typer is not None:
-            self.keyboard_typer.stop()
         self.settings_window.close()
         event.accept()
 
@@ -649,9 +626,6 @@ class DualWindow(QMainWindow):
         if self.uploader is not None:
             for track in tracks:
                 self.uploader.submit(track.text)    # uploader tự bỏ mã trùng trong 30 giây
-        if self.keyboard_typer is not None:
-            for track in tracks:
-                self.keyboard_typer.submit(track.text)   # cùng mã ở A và B chỉ gõ một lần trong 30 giây
         for row in self.stats.on_reads(cam, tracks):
             self.workspace.upsert_row(row)
         self.workspace.flash_latest()
@@ -667,9 +641,6 @@ class DualWindow(QMainWindow):
         for row in self.stats.on_passes(cam, tracks):
             self.workspace.upsert_row(row)
         self._refresh_results()
-
-    def on_keyboard_status(self, status):
-        self.workspace.set_keyboard_status(status.message, status.ok)
 
     def on_upload_status(self, status):
         if status.last_ok is False:

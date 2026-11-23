@@ -30,7 +30,6 @@ try:
     from demo_ui.app_settings import DEFAULT_SETTINGS_PATH
     from demo_ui import theme
     from demo_ui.main_window import MainWindow
-    from ui.keyboard_output import KeyboardTyper
 except (ImportError, FileNotFoundError, OSError) as e:
     _fail(
         "Không khởi tạo được ứng dụng.\n"
@@ -44,6 +43,6 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)   # chạy nền: MainWindow tự quit khi đóng hẳn
     theme.apply(app)
-    window = MainWindow(settings_path=DEFAULT_SETTINGS_PATH, keyboard_typer=KeyboardTyper(), tray=True)
+    window = MainWindow(settings_path=DEFAULT_SETTINGS_PATH, tray=True)
     window.show()
     sys.exit(app.exec_())

@@ -39,7 +39,6 @@ try:
     from demo_ui.app_settings import REPLAY_SETTINGS_PATH, ReplaySettings
     from demo_ui import theme
     from demo_ui.replay_end import ReplayEndWatcher
-    from ui.keyboard_output import KeyboardTyper
     from demo_ui.main_window import MainWindow
 except (ImportError, FileNotFoundError, OSError) as e:
     _fail(
@@ -74,7 +73,7 @@ if __name__ == "__main__":
     app = QApplication([sys.argv[0]] + qt_args)
     theme.apply(app)
     window = MainWindow(settings_path=REPLAY_SETTINGS_PATH, camera=camera, settings_cls=ReplaySettings,
-                        keyboard_typer=KeyboardTyper(), tray=False)
+                        tray=False)
     speed = "" if args.speed == 1.0 else f" ×{args.speed:g}"
     window.setWindowTitle(f"QR Conveyor Reader — Phát lại{speed} — " + (LABEL if fallback else "không đọc nền"))
     window.spin_gain.setSuffix(" dB")

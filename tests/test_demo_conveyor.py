@@ -17,9 +17,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from tests import test_camera_diagnostics as fake  # noqa: E402  (dựng fake mvsdk + import module)
-from tests.test_keyboard_output import FakeBackend as FakeKeyboard  # noqa: E402
-from demo_ui.app_settings import BaslerSettings  # noqa: E402
-from ui.keyboard_output import KeyboardTyper  # noqa: E402
+from dataclasses import asdict  # noqa: E402
+
+from demo_ui.app_settings import AppSettings, BaslerSettings  # noqa: E402
 from demo_ui.scan_uploader import ScanUploader  # noqa: E402
 
 
@@ -348,86 +348,6 @@ class UploadSwitchTests(unittest.TestCase):
         return path
 
 
-class KeyboardSwitchTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.app = fake.QApplication.instance() or fake.QApplication([])
-
-    def make(self, with_typer=True, **saved):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        self.path = Path(tmp.name) / "settings.json"
-        self.path.write_text(json.dumps(saved), encoding="utf-8")
-        self.backend = FakeKeyboard()
-        self.typer = None
-        if with_typer:
-            self.typer = KeyboardTyper(backend=self.backend, own_pid=1, enter_delay_s=0, autostart=False)
-        window = window_module.MainWindow(settings_path=self.path, uploader=unittest.mock.Mock(),
-                                          settings_cls=BaslerSettings, keyboard_typer=self.typer)
-        window.display_timer.stop()
-        window.fps_timer.stop()
-        window.worker.stop()
-        self.addCleanup(window.close)
-        return window
-
-    def read(self, window, text):
-        with unittest.mock.patch.object(window.stats, "on_reads", return_value=[]):
-            window.on_reads_done([types.SimpleNamespace(text=text)])
-        if self.typer is not None:
-            self.typer.drain()
-
-    def test_app_without_typer_has_no_switch_and_still_handles_reads(self):
-        window = self.make(with_typer=False)
-        self.assertIsNone(window.cbx_keyboard)
-        self.read(window, "A")
-        self.assertEqual(self.backend.events, [])
-
-    def test_off_by_default_types_nothing(self):
-        window = self.make()
-        self.assertFalse(window.cbx_keyboard.isChecked())
-        self.read(window, "A")
-        self.assertEqual(self.backend.events, [])
-
-    def test_saved_on_types_read_code_and_enter(self):
-        window = self.make(keyboard_output_enabled=True)
-        self.assertTrue(window.cbx_keyboard.isChecked())
-        self.read(window, "A")
-        self.assertEqual(self.backend.events, [("text", "A"), ("enter",)])
-
-    def test_toggle_applies_immediately_and_is_saved(self):
-        window = self.make()
-        window.cbx_keyboard.setChecked(True)
-        self.assertTrue(window._settings_timer.isActive())
-        self.read(window, "A")
-        self.assertEqual(self.backend.events, [("text", "A"), ("enter",)])
-        window._save_settings()
-        self.assertTrue(json.loads(self.path.read_text(encoding="utf-8"))["keyboard_output_enabled"])
-        window.cbx_keyboard.setChecked(False)
-        self.read(window, "B")
-        self.assertEqual(self.backend.events, [("text", "A"), ("enter",)])
-
-    def test_footer_hidden_until_first_attempt_then_shows_result(self):
-        window = self.make(keyboard_output_enabled=True)
-        label = window.workspace.lbl_keyboard
-        self.assertTrue(label.isHidden())
-        self.read(window, "CODE-1")
-        self.assertFalse(label.isHidden())
-        self.assertIn("CODE-1", label.text())
-        self.assertEqual(label.property("level"), "ok")
-
-    def test_footer_warns_when_code_is_skipped(self):
-        window = self.make(keyboard_output_enabled=True)
-        self.backend.window = (6000, 1)         # cửa sổ của chính app
-        self.read(window, "CODE-1")
-        self.assertIn("CODE-1", window.workspace.lbl_keyboard.text())
-        self.assertEqual(window.workspace.lbl_keyboard.property("level"), "warn")
-
-    def test_closing_window_stops_typer(self):
-        window = self.make(keyboard_output_enabled=True)
-        window.close()
-        self.assertFalse(self.typer.submit("A"))
-
-
 class GpuSwitchTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -470,6 +390,33 @@ class GpuSwitchTests(unittest.TestCase):
         window.pipeline.set_device.assert_not_called()
         window._save_settings()
         self.assertTrue(json.loads(self.path.read_text(encoding="utf-8"))["use_gpu"])
+
+
+class BaseWorkerReadsTests(unittest.TestCase):
+    """DecodeWorker của ui/ phát ``reads`` cho lượt vừa đọc chắc."""
+
+    def test_first_reads_are_emitted(self):
+        worker = fake.window_module.DecodeWorker(unittest.mock.Mock())
+        worker.stop()
+        got = []
+        worker.reads.connect(got.append)
+        first = [types.SimpleNamespace(text="A", track_id=1, observations=3, conflicting=False)]
+        worker._reader = unittest.mock.Mock()
+        worker._reader.process.return_value = types.SimpleNamespace(
+            results=["A"], overlays=[], detect_ms=1.0, cascade_ms=1.0, skipped=0, first_reads=first, finished=[])
+        worker._process(object(), 1)
+        self.assertEqual(got, [first])
+        worker._reader.process.return_value.first_reads = []
+        worker._process(object(), 2)
+        self.assertEqual(len(got), 1)
+
+
+class LegacySettingsTests(unittest.TestCase):
+    def test_old_keyboard_and_url_fields_are_ignored(self):
+        s = AppSettings.from_dict({"keyboard_output_enabled": True,
+                                   "upload_base_url": "https://old.example", "decode_every_n": 7})
+        self.assertEqual(s.decode_every_n, 7)
+        self.assertNotIn("keyboard_output_enabled", asdict(s))
 
 
 if __name__ == "__main__":

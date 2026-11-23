@@ -157,14 +157,8 @@ class DecodeWorker(QObject):
 
 class MainWindow(QMainWindow):
 
-    keyboard_status = pyqtSignal(object)    # KeyStatus từ thread gõ → GUI thread
-
-    def __init__(self, keyboard_typer=None):
-        """keyboard_typer: KeyboardTyper (ui/keyboard_output.py) thì có ô gõ mã vào ô đang chọn; None = không có."""
+    def __init__(self):
         super().__init__()
-        self.keyboard_typer = keyboard_typer
-        if keyboard_typer is not None:
-            keyboard_typer.on_status = self.keyboard_status.emit
 
         # Thành viên
         self.mgr = CameraManager()
@@ -174,8 +168,6 @@ class MainWindow(QMainWindow):
         self.worker.failed.connect(self.on_decode_failed)
         self.worker.stats.connect(self.on_decode_stats)
         self.worker.passes.connect(self.on_passes_done)
-        self.worker.reads.connect(self.on_reads_done)
-        self.keyboard_status.connect(self.on_keyboard_status)
 
         self.cameraList = []
         self.ui_initing = 0
@@ -307,13 +299,6 @@ class MainWindow(QMainWindow):
         row1.addWidget(self.spin_n)
         row1.addWidget(self.cbx_decode)
         row1.addWidget(self.cbx_quad)
-        self.cbx_keyboard = None
-        if self.keyboard_typer is not None:
-            self.cbx_keyboard = QCheckBox("Gõ mã vào ô đang chọn", self.qr_group)
-            self.cbx_keyboard.setToolTip("Đọc được mã thì gõ vào ô đang có con trỏ ở ứng dụng khác rồi nhấn Enter. "
-                                         "Mã trùng trong 30 giây chỉ gõ một lần. Mặc định tắt, không lưu khi đóng app.")
-            self.cbx_keyboard.toggled.connect(self.keyboard_typer.set_enabled)
-            row1.addWidget(self.cbx_keyboard)
         row1.addStretch(1)
         row.addLayout(row1)
 
@@ -585,8 +570,6 @@ class MainWindow(QMainWindow):
         self.fps_timer.stop()
         self.recording_timer.stop()
         self.worker.stop()
-        if self.keyboard_typer is not None:
-            self.keyboard_typer.stop()
         event.accept()
 
     # ── Camera list / open / close ────────────────────────────────────────────
@@ -857,15 +840,6 @@ class MainWindow(QMainWindow):
         self._passes_conflict += sum(1 for t in tracks if t.conflicting)
         self.lbl_passes.setText("Lượt QR: {}/{} đọc được · mâu thuẫn {}".format(
             self._passes_read, self._passes_total, self._passes_conflict))
-
-    def on_reads_done(self, tracks):
-        """Lượt vừa đọc chắc (2 lần giống nhau): gõ vào ô đang chọn nếu bật."""
-        if self.keyboard_typer is not None:
-            for track in tracks:
-                self.keyboard_typer.submit(track.text)
-
-    def on_keyboard_status(self, status):
-        self.ui.status_bar.setText("Gõ phím: " + status.message)
 
     def on_decode_failed(self, msg):
         self.ui.status_bar.setText("Decode lỗi: {}".format(msg[:100]))

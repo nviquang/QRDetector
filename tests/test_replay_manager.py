@@ -197,7 +197,6 @@ class ReplaySettingsTests(unittest.TestCase):
     def test_upload_off_by_default_and_saved_choice_kept(self):
         from demo_ui.app_settings import ReplaySettings
         self.assertFalse(ReplaySettings().upload_enabled)
-        self.assertFalse(ReplaySettings().keyboard_output_enabled)
         self.assertTrue(ReplaySettings.from_dict({"upload_enabled": True}).upload_enabled)
 
 
