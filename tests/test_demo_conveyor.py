@@ -19,6 +19,7 @@ sys.path.insert(0, str(ROOT))
 from tests import test_camera_diagnostics as fake  # noqa: E402  (dựng fake mvsdk + import module)
 from dataclasses import asdict  # noqa: E402
 
+from demo_ui.api_config import ApiConfig  # noqa: E402
 from demo_ui.app_settings import AppSettings, BaslerSettings  # noqa: E402
 from demo_ui.scan_uploader import ScanUploader  # noqa: E402
 
@@ -290,8 +291,7 @@ class UploadSwitchTests(unittest.TestCase):
         self.path = Path(tmp.name) / "settings.json"
         self.path.write_text(json.dumps(saved), encoding="utf-8")
         self.sent = []
-        self.uploader = ScanUploader(send=self.sent.append, base_url="https://example.test",
-                                     autostart=False)
+        self.uploader = ScanUploader(send=self.sent.append, autostart=False)
         window = window_module.MainWindow(settings_path=self.path, uploader=self.uploader)
         window.display_timer.stop()
         window.fps_timer.stop()
@@ -308,7 +308,7 @@ class UploadSwitchTests(unittest.TestCase):
         window = self.make()
         self.assertTrue(window.cbx_upload.isChecked())
         self.read(window, "A")
-        self.assertEqual(self.sent, ["https://example.test/A"])
+        self.assertEqual(self.sent, ["A"])
 
     def test_saved_off_shows_unchecked_and_sends_nothing(self):
         window = self.make(upload_enabled=False)
@@ -326,10 +326,11 @@ class UploadSwitchTests(unittest.TestCase):
         self.assertFalse(json.loads(self.path.read_text(encoding="utf-8"))["upload_enabled"])
         window.cbx_upload.setChecked(True)
         self.read(window, "B")
-        self.assertEqual(self.sent, ["https://example.test/B"])
+        self.assertEqual(self.sent, ["B"])
 
     def test_saved_off_can_be_turned_on_without_restart(self):
-        with unittest.mock.patch.object(window_module, "ScanUploader") as uploader_cls:
+        config = (ApiConfig("https://x.test", "s", "k"), [])
+        with unittest.mock.patch.object(window_module, "ScanUploader") as uploader_cls,                 unittest.mock.patch.object(window_module, "load_api_config", return_value=config):
             window = window_module.MainWindow(settings_path=self._saved_off())
             window.display_timer.stop()
             window.fps_timer.stop()

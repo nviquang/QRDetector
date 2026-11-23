@@ -2,18 +2,20 @@
 
 Chạy (từ gốc repo):  python -m unittest tests.test_scan_uploader
 """
+import io
+import json
 from pathlib import Path
 import sys
 import threading
 import unittest
+import urllib.error
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from demo_ui.scan_uploader import (PermanentError, ScanUploader, TransientError,  # noqa: E402
-                                   build_url)
-
-BASE = "https://example.test/api/scans"
+from demo_ui.api_config import ApiConfig  # noqa: E402
+from demo_ui.scan_uploader import (REPORT_PATH, PermanentError, ReportClient, ScanUploader,  # noqa: E402
+                                   TransientError, make_app_token)
 
 
 class Clock:
@@ -26,23 +28,17 @@ class Clock:
 
 def make(send, clock=None, **kw):
     """Uploader chạy đồng bộ: autostart=False, dùng drain() thay thread."""
-    return ScanUploader(send=send, base_url=BASE, monotonic=clock or Clock(), sleep=lambda s: None,
+    return ScanUploader(send=send, monotonic=clock or Clock(), sleep=lambda s: None,
                         autostart=False, **kw)
 
 
-class BuildUrlTests(unittest.TestCase):
-    def test_encodes_reserved_and_unicode_characters(self):
-        self.assertEqual(build_url(BASE, "A/B?C#D%E"), BASE + "/A%2FB%3FC%23D%25E")
-        self.assertEqual(build_url(BASE + "/", "Mã 1"), BASE + "/M%C3%A3%201")
-
-
 class UploaderTests(unittest.TestCase):
-    def test_sends_put_to_encoded_url(self):
+    def test_sends_code_verbatim(self):
         sent = []
-        up = make(lambda url: sent.append(url))
-        up.submit("A/1")
+        up = make(sent.append)
+        up.submit("12#34")
         up.drain()
-        self.assertEqual(sent, [BASE + "/A%2F1"])
+        self.assertEqual(sent, ["12#34"])
 
     def test_disabled_ignores_submit_and_enabling_sends_again(self):
         sent = []
@@ -54,7 +50,7 @@ class UploaderTests(unittest.TestCase):
         up.set_enabled(True)
         self.assertTrue(up.submit("A"))
         up.drain()
-        self.assertEqual(sent, [BASE + "/A"])
+        self.assertEqual(sent, ["A"])
 
     def test_disabling_drops_queue_and_forgets_dropped_codes(self):
         sent = []
@@ -65,7 +61,7 @@ class UploaderTests(unittest.TestCase):
         up.set_enabled(True)
         self.assertTrue(up.submit("A"))      # không bị coi là trùng
         up.drain()
-        self.assertEqual(sent, [BASE + "/A"])
+        self.assertEqual(sent, ["A"])
 
     def test_disabling_during_retry_stops_without_counting_failure(self):
         calls, statuses = [], []
@@ -136,13 +132,22 @@ class UploaderTests(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertEqual(up.failed_count, 1)
 
+    def test_failure_status_carries_server_error(self):
+        def send(text):
+            raise PermanentError("Không tìm thấy tấm")
+        statuses = []
+        up = make(send, on_status=statuses.append)
+        up.submit("A"); up.drain()
+        self.assertIs(statuses[-1].last_ok, False)
+        self.assertEqual(statuses[-1].last_error, "Không tìm thấy tấm")
+
     def test_full_queue_drops_oldest(self):
         sent = []
         up = make(sent.append, maxsize=2)
         for t in "ABC":
             up.submit(t)
         up.drain()
-        self.assertEqual([u.rsplit("/", 1)[1] for u in sent], ["B", "C"])
+        self.assertEqual(sent, ["B", "C"])
         self.assertEqual(up.dropped_count, 1)
 
     def test_status_callback_reports_pending_and_results(self):
@@ -154,12 +159,112 @@ class UploaderTests(unittest.TestCase):
 
     def test_thread_mode_sends_and_stop_does_not_hang(self):
         done = threading.Event()
-        up = ScanUploader(send=lambda url: done.set(), base_url=BASE)
+        up = ScanUploader(send=lambda text: done.set())
         up.submit("A")
         self.assertTrue(done.wait(2.0))
         up.stop()
         up.submit("B")                            # sau stop: bỏ qua, không lỗi
         self.assertEqual(up.pending, 0)
+
+
+CFG = ApiConfig("https://x.test", "s", "k")
+NOW = 1763631234567                      # → ts 1763631180000
+
+
+class FakeResponse:
+    def __init__(self, body: bytes):
+        self._body = body
+
+    def read(self):
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+class FakeOpener:
+    """Ghi lại (Request, timeout); trả body 200 hoặc ném HTTPError/URLError đã cài."""
+
+    def __init__(self, status=200, body=b'{"status":"REPORTED","warning":""}', exc=None):
+        self.status, self.body, self.exc = status, body, exc
+        self.calls = []
+
+    def __call__(self, request, timeout=None):
+        self.calls.append((request, timeout))
+        if self.exc is not None:
+            raise self.exc
+        if self.status != 200:
+            raise urllib.error.HTTPError(request.full_url, self.status, "err", {}, io.BytesIO(self.body))
+        return FakeResponse(self.body)
+
+
+def client(opener, config=CFG, now=lambda: NOW):
+    return ReportClient(config, now_ms=now, opener=opener)
+
+
+class ReportClientTests(unittest.TestCase):
+    def test_signature_vector(self):
+        self.assertEqual(make_app_token("test-secret", "POST", REPORT_PATH, 1763631180000),
+                         "5b0b785e50ed64bdcfa810bf3b57a9622097f6a14412a9318ec93f20b5233a2b")
+
+    def test_request_shape(self):
+        opener = FakeOpener()
+        client(opener)("A")
+        request, timeout = opener.calls[0]
+        self.assertEqual(request.get_method(), "POST")
+        self.assertEqual(request.full_url, "https://x.test/api/v1/production/camera/product-item-reports")
+        self.assertEqual(request.get_header("X-api-key"), "k")
+        self.assertEqual(request.get_header("X-app-token"), make_app_token("s", "POST", REPORT_PATH, 1763631180000))
+        self.assertEqual(request.get_header("Content-type"), "application/json")
+        self.assertEqual(timeout, 10.0)
+
+    def test_trailing_slash_in_base_url(self):
+        opener = FakeOpener()
+        client(opener, ApiConfig("https://x.test/", "s", "k"))("A")
+        self.assertNotIn("//api", opener.calls[0][0].full_url)
+
+    def test_body_sends_code_verbatim(self):
+        opener = FakeOpener()
+        client(opener)("12 #34é")
+        self.assertEqual(json.loads(opener.calls[0][0].data), {"productItemCode": "12 #34é"})
+
+    def test_returns_warning(self):
+        warning = "Tấm đã được quét trước đó, số lần quét đã tăng"
+        body = json.dumps({"status": "REPORTED", "warning": warning}).encode()
+        self.assertEqual(client(FakeOpener(body=body))("A"), warning)
+
+    def test_404_is_permanent_with_server_message(self):
+        body = json.dumps({"error": "Không tìm thấy tấm"}).encode()
+        with self.assertRaises(PermanentError) as ctx:
+            client(FakeOpener(404, body))("A")
+        self.assertEqual(str(ctx.exception), "Không tìm thấy tấm")
+
+    def test_403_message_hints_clock(self):
+        with self.assertRaises(PermanentError) as ctx:
+            client(FakeOpener(403, b'{"error":"invalid X-App-Token"}'))("A")
+        self.assertIn("kiểm tra giờ máy", str(ctx.exception))
+
+    def test_500_and_network_are_transient(self):
+        with self.assertRaises(TransientError):
+            client(FakeOpener(500, b'{"error":"B\u00e1o c\u00e1o t\u1ea5m th\u1ea5t b\u1ea1i: x"}'))("A")
+        with self.assertRaises(TransientError):
+            client(FakeOpener(exc=urllib.error.URLError("down")))("A")
+
+    def test_non_json_5xx_is_transient(self):
+        with self.assertRaises(TransientError) as ctx:
+            client(FakeOpener(502, b"<html>"))("A")
+        self.assertEqual(str(ctx.exception), "HTTP 502")
+
+    def test_token_recomputed_each_call(self):
+        times = iter([60000, 120000])
+        opener = FakeOpener()
+        c = client(opener, now=lambda: next(times))
+        c("A"); c("A")
+        self.assertNotEqual(opener.calls[0][0].get_header("X-app-token"),
+                            opener.calls[1][0].get_header("X-app-token"))
 
 
 if __name__ == "__main__":

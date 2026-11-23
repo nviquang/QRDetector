@@ -33,7 +33,8 @@ from .dual_worker import DualDecodeWorker
 from .dual_workspace import DualWorkspace
 from .merged_stats import MergedStats
 from .run_controller import RunController, RunState, StartRequest
-from .scan_uploader import ScanUploader
+from .api_config import load_api_config
+from .scan_uploader import ReportClient, ScanUploader
 from .session_stats import age_text
 from .settings_window import _page
 
@@ -203,8 +204,11 @@ class DualWindow(QMainWindow):
         self._settings_path = settings_path
         self.settings = DualSettings.load(settings_path) if settings_path else DualSettings()
         common = self.settings.a      # phần dùng chung lưu ở bản ghi camera A
+        self.api_missing: list[str] = []           # biến .env còn thiếu → không gửi được
         if uploader is None and settings_path:
-            uploader = ScanUploader(base_url=common.upload_base_url, on_status=self.upload_status.emit)
+            config, self.api_missing = load_api_config()
+            if config is not None:
+                uploader = ScanUploader(send=ReportClient(config), on_status=self.upload_status.emit)
         self.uploader = uploader
         self.pipeline = pipeline if pipeline is not None else ImprovePipeline(device=_device_for(common.use_gpu))
         self.worker = DualDecodeWorker(self.pipeline)

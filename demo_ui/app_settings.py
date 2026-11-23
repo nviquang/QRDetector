@@ -11,7 +11,6 @@ import logging
 import os
 from pathlib import Path
 
-from demo_ui.scan_uploader import DEFAULT_BASE_URL
 
 logger = logging.getLogger("solution.settings")
 
@@ -49,7 +48,6 @@ _VALID = {
     "band_x": _is_int(0, 4096),
     "band_w": _is_int(16, 4096),
     "upload_enabled": _is_bool,
-    "upload_base_url": lambda v: isinstance(v, str) and v.startswith(("http://", "https://")),
 }
 
 
@@ -82,7 +80,6 @@ class AppSettings:
     band_x: int = 0
     band_w: int = 2448
     upload_enabled: bool = True     # gửi mã QR đọc được lên API
-    upload_base_url: str = DEFAULT_BASE_URL
 
     @classmethod
     def load(cls, path: Path) -> "AppSettings":

@@ -33,7 +33,8 @@ from ui.main_window import draw_overlays, frame_to_qimage
 
 from .app_settings import AppSettings
 from .run_controller import RunController, RunState, StartRequest
-from .scan_uploader import ScanUploader
+from .api_config import load_api_config
+from .scan_uploader import ReportClient, ScanUploader
 from .session_stats import SessionStats, age_text
 from .settings_window import TAB_CONNECTION, TAB_TITLES, SettingsWindow
 from .tray import TrayController
@@ -147,9 +148,11 @@ class MainWindow(QMainWindow):
         # Thành viên
         self._settings_path = settings_path
         self.settings = settings_cls.load(settings_path) if settings_path else settings_cls()
+        self.api_missing: list[str] = []           # biến .env còn thiếu → không gửi được
         if uploader is None and settings_path:     # luôn tạo để bật lại được khi đang chạy
-            uploader = ScanUploader(base_url=self.settings.upload_base_url,
-                                    on_status=self.upload_status.emit)
+            config, self.api_missing = load_api_config()
+            if config is not None:
+                uploader = ScanUploader(send=ReportClient(config), on_status=self.upload_status.emit)
         self.uploader = uploader
         self.mgr = camera if camera is not None else CameraManager()
         self.pipeline = ImprovePipeline(device=_device_for(self.settings.use_gpu))
