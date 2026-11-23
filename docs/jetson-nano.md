@@ -1,13 +1,15 @@
 # Chạy QRDetector trên Jetson Nano 4GB
 
-Hướng dẫn chạy app quét QR, mặc định là bản Basler `main_basler.py`, trên Jetson Nano Developer Kit 4GB. App chạy trong Docker và chỉ dùng CPU.
+Hướng dẫn chạy app quét QR với **camera Basler** (`main_basler.py`) trên Jetson Nano Developer Kit 4GB. App chạy trong Docker và chỉ dùng CPU. Không cần cài pylon hay MindVision SDK.
 
-> **Trạng thái:** viết ngày 23/11/2026, **chưa chạy thử trên Jetson thật**. Đã kiểm tra:
+> **Trạng thái (23/11/2026):** đã làm theo tài liệu trên Jetson Nano 4GB thật (JetPack 4.6.1, L4T R32.7.1):
 >
-> - PyPI có wheel aarch64 cho Python 3.11 của mọi gói trong `docker/jetson/requirements.txt`;
-> - app import và tạo được bộ phát hiện khi không cài torch/qrdet (`tests/test_no_torch.py`).
+> - image build được, mọi gói cài từ wheel, không phải biên dịch;
+> - camera `a2A2840-48umBAS` nhận qua USB 3 trong container;
+> - `main_basler.py` mở được và tìm thấy camera, không cần MindVision SDK;
+> - OpenVINO chạy được trên Cortex-A57.
 >
-> Chưa đo tốc độ, chưa thử camera và chưa thử OpenVINO trên CPU Cortex-A57. Gặp lỗi thì ghi lại theo mục [Xử lý sự cố](#xử-lý-sự-cố) và cập nhật tài liệu này.
+> **Chưa thử đọc QR trên băng chuyền.** Gặp lỗi thì ghi lại theo mục [Xử lý sự cố](#xử-lý-sự-cố) và cập nhật tài liệu này.
 
 ## Vì sao phải dùng Docker
 
@@ -54,25 +56,16 @@ Image `docker/jetson/Dockerfile` dựa trên Debian bookworm, gồm Python 3.11,
    sudo usermod -aG docker $USER
    ```
 
-## 2. Lấy mã nguồn và thư viện MindVision
+## 2. Lấy mã nguồn
 
 ```bash
 git clone git@github.com:nviquang/QRDetector.git
 cd QRDetector
 ```
 
-**Thư viện MindVision bắt buộc, kể cả khi chỉ dùng camera Basler.** Giao diện luôn nạp `mvsdk.py`. Trên Linux, file này nạp `libMVSDK.so` ngay khi import, thiếu file là app không mở. Làm như sau:
+**Không cần cài pylon:** wheel `pypylon` đã có sẵn runtime pylon cho aarch64.
 
-1. Tải **MindVision Linux SDK** từ trang tải về của MindVision (gói `linuxSDK_*.tar.gz`).
-2. Giải nén, tìm `libMVSDK.so` trong thư mục thư viện ARM 64-bit (tên thường là `arm64` hoặc `aarch64`).
-3. Chép file vào `docker/jetson/lib/`. Thư mục này đã được gitignore, file không bị commit.
-
-```bash
-cp <thư mục SDK>/lib/arm64/libMVSDK.so docker/jetson/lib/
-file docker/jetson/lib/libMVSDK.so      # phải có "ARM aarch64"
-```
-
-pylon của Basler không cần cài riêng: wheel `pypylon` đã có sẵn runtime pylon cho aarch64.
+**Không cần MindVision SDK khi chỉ dùng camera Basler.** Thiếu `libMVSDK.so` thì `mvsdk.py` vẫn import được (`mvsdk.AVAILABLE = False`); chỉ khi gọi hàm của camera MindVision mới báo lỗi. Nếu sau này cần camera MindVision (`main_dual.py`), chép `libMVSDK.so` bản arm64 của MindVision Linux SDK (`file` phải ra "ARM aarch64") vào `docker/jetson/lib/` rồi build lại image. Thư mục này đã được gitignore.
 
 ## 3. Cấu hình gửi mã lên server
 
@@ -97,7 +90,7 @@ Build ngay trên Jetson. Lần đầu tải khoảng 400 MB và mất 10–20 ph
 docker build -t qrdetector-jetson docker/jetson
 ```
 
-Thêm, bớt hoặc thay `libMVSDK.so` thì build lại. Sửa mã Python thì **không** cần build lại, vì `run.sh` gắn thẳng thư mục repo vào container.
+Sửa `docker/jetson/` (requirements, Dockerfile, thư viện trong `lib/`) thì build lại. Sửa mã Python thì **không** cần build lại, vì `run.sh` gắn thẳng thư mục repo vào container.
 
 ## 5. Chạy
 
@@ -135,14 +128,20 @@ docker run --rm --privileged -v /dev:/dev -v "$PWD":/app -w /app qrdetector-jets
 
 ## 6. Tinh chỉnh tốc độ
 
-Jetson Nano chỉ có 4 nhân Cortex-A57 1,43 GHz, chậm hơn nhiều so với Ryzen 5 5500U dùng để đo trong `README.md` (detect 144 ms ở ×0,75). **Cần đo lại trên máy thật.** Xem thời gian detect và cascade trên nhãn trạng thái của app. Cách đo không cần băng chuyền là chạy `main_replay.py` với một bản ghi. Các nút chỉnh, theo thứ tự nên thử:
+Jetson Nano chỉ có 4 nhân Cortex-A57 1,43 GHz. Đo ngày 23/11/2026 ở chế độ MAXN, ảnh dải 2840×1072, ×0,75, p50 của 5 lần:
+
+| Bộ phát hiện | Jetson Nano | Ryzen 5 5500U (`README.md`) |
+|---|---:|---:|
+| OpenVINO | 1474 ms | 144 ms |
+| ONNX Runtime | 1912 ms | 182 ms |
+
+Detect chậm hơn khoảng 10 lần so với máy bàn. Ở chế độ đọc nhiều frame, YOLO chạy tối đa mỗi 400 ms, nên trên Nano thực tế khoảng 1,5 s một lần. Tem đi qua dải 600 mm ở 100 mm/s mất khoảng 6 s, tức được detect khoảng 4 lần. Bước cascade và đọc nền còn tốn thêm CPU, **chưa đo tỉ lệ đọc**. Xem thời gian detect và cascade trên nhãn trạng thái của app. Cách đo không cần băng chuyền là chạy `main_replay.py` với một bản ghi. Các nút chỉnh, theo thứ tự nên thử:
 
 | Chỉnh | Tác dụng | Đánh đổi |
 |---|---|---|
 | Vùng đọc (dải y, tab Băng chuyền) hẹp sát buồng tối | ảnh nhỏ hơn: detect nhanh hơn và USB nhẹ hơn | đặt sai dải thì mất tem ở mép |
 | Ô **N** (decode mỗi N frame) | giảm tải đều | N lớn quá thì lượt ngắn có ít frame để đọc |
 | `QR_DETECT_THREADS=4` | dùng đủ 4 nhân cho detect | tranh CPU với cascade và đọc nền |
-| `QR_DETECTOR=onnx` | dùng ONNX Runtime thay OpenVINO | chưa biết bên nào nhanh hơn trên A57, phải đo |
 | `QR_FALLBACK=off` | tắt đọc nền B/C (mỗi lượt khó tốn 2–15 s CPU trên máy bàn, trên Nano lâu hơn) | mất các lượt chỉ B/C đọc được |
 | `QR_DETECT_SCALE=0.6` | detect nhanh khoảng 1,5 lần (số trên máy bàn) | recall tụt khoảng 3 điểm (99,7% → 96,6% trên `data/field`) |
 
@@ -152,7 +151,7 @@ Jetson Nano chỉ có 4 nhân Cortex-A57 1,43 GHz, chậm hơn nhiều so với 
 
 | Triệu chứng | Nguyên nhân và cách xử lý |
 |---|---|
-| `OSError: libMVSDK.so: cannot open shared object file` | Chưa chép `libMVSDK.so` vào `docker/jetson/lib/` trước khi build, hoặc chép nhầm bản x86/armhf (`file` phải ra aarch64). Chép lại rồi build lại. |
+| `Chưa cài MindVision SDK … không gọi được Camera…` | Đang mở camera MindVision (`main.py`, `main_demo.py`, camera A của `main_dual.py`). Với Basler dùng `main_basler.py`. Cần MindVision thì chép `libMVSDK.so` arm64 vào `docker/jetson/lib/` rồi build lại. |
 | `qt.qpa.xcb: could not connect to display` | Chưa có `DISPLAY` (khi SSH thì `export DISPLAY=:0`), hoặc `xhost` từ chối. Chạy `xhost +local:root` trên máy chủ, trong phiên desktop. |
 | `Could not load the Qt platform plugin "xcb"` | Có ai đó cài `opencv-contrib-python` bản thường vào image. Phải dùng bản `-headless` như `docker/jetson/requirements.txt`. |
 | Log `Không dùng được bộ phát hiện openvino … thử phương án kế tiếp` | OpenVINO không chạy trên CPU này. App tự dùng ONNX Runtime, không cần làm gì. Muốn bỏ hẳn lần thử OpenVINO thì đặt `QR_DETECTOR=onnx`. |

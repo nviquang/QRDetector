@@ -79,7 +79,7 @@ POST
 
 ## Bản demo Basler (`python main_basler.py`)
 
-Dùng lại toàn bộ `demo_ui`: `MainWindow(camera=BaslerCameraManager(), settings_cls=BaslerSettings)`; không truyền thì vẫn là MindVision. `camera/basler_manager.py` chỉ có phần API `CameraManager` mà demo dùng (`list_cameras`, `open`, `close`, `latest_frame`, `frame_statistic`, `apply_run_settings`, getter exposure/gain, `set_trigger_mode(0)`), thiết bị bọc trong `BaslerDevice` (`GetSn`, `GetFriendlyName`, `GetPortType`). Sửa API demo gọi từ camera thì sửa cả ba backend (MindVision, Basler, phát lại). Capture: `GrabStrategy_LatestImageOnly`, Mono8 → BGR. Đổi vùng đọc hoặc tắt giới hạn fps phải dừng grab rồi chạy lại (camera khóa tham số khi grab); exposure/gain đổi được ngay. Getter trả giá trị cache, không gọi SDK từ GUI thread. Gain tính bằng dB (`RunSettings.analog_gain`), kẹp theo camera. Cấu hình: `config/basler_settings.json`. Vẫn nạp `mvsdk` qua `demo_ui.main_window` nên máy cần DLL MindVision. Test: `tests/test_basler_manager.py` (pylon giả); chạy không camera bằng `PYLON_CAMEMU=1` và chọn serial `0815-0000` — camera thật xếp trước nên phải chọn theo serial.
+Dùng lại toàn bộ `demo_ui`: `MainWindow(camera=BaslerCameraManager(), settings_cls=BaslerSettings)`; không truyền thì vẫn là MindVision. `camera/basler_manager.py` chỉ có phần API `CameraManager` mà demo dùng (`list_cameras`, `open`, `close`, `latest_frame`, `frame_statistic`, `apply_run_settings`, getter exposure/gain, `set_trigger_mode(0)`), thiết bị bọc trong `BaslerDevice` (`GetSn`, `GetFriendlyName`, `GetPortType`). Sửa API demo gọi từ camera thì sửa cả ba backend (MindVision, Basler, phát lại). Capture: `GrabStrategy_LatestImageOnly`, Mono8 → BGR. Đổi vùng đọc hoặc tắt giới hạn fps phải dừng grab rồi chạy lại (camera khóa tham số khi grab); exposure/gain đổi được ngay. Getter trả giá trị cache, không gọi SDK từ GUI thread. Gain tính bằng dB (`RunSettings.analog_gain`), kẹp theo camera. Cấu hình: `config/basler_settings.json`. Vẫn nạp `mvsdk` qua `demo_ui.main_window`, nhưng thiếu DLL/`libMVSDK.so` thì `mvsdk` không lỗi lúc import (`AVAILABLE=False`, gọi hàm SDK báo OSError) — máy chỉ có Basler không cần MindVision SDK (`tests/test_mvsdk_missing.py`). Test: `tests/test_basler_manager.py` (pylon giả); chạy không camera bằng `PYLON_CAMEMU=1` và chọn serial `0815-0000` — camera thật xếp trước nên phải chọn theo serial.
 
 ## Bản phát lại (`python main_replay.py [--data data/field/raw] [--speed 1.0]`)
 
@@ -98,7 +98,7 @@ Test: `tests/test_replay_manager.py` (TIFF tạm + `os.utime`), `tests/test_repl
 
 ## Jetson Nano (`docs/jetson-nano.md`)
 
-Chạy trong Docker (`docker/jetson/Dockerfile`, Debian bookworm: Python 3.11, glibc 2.36, PyQt5 từ apt vì PyPI không có wheel aarch64; JetPack 4.6 chỉ có Python 3.6/glibc 2.27), chỉ CPU với bộ phát hiện ONNX/OpenVINO, không cài torch/qrdet: `qr/detector.py` nạp torch/qrdet trong try, thiếu thì chỉ `QRDetector()` báo ImportError (`tests/test_no_torch.py`). OpenCV bản headless (bản thường xung đột plugin xcb với PyQt5). `libMVSDK.so` arm64 chép vào `docker/jetson/lib/` (gitignore) vì `mvsdk` luôn được nạp. `docker/jetson/run.sh` gắn repo vào `/app`, `--privileged --network host`, X11. Chưa chạy thử trên Jetson thật.
+Chạy trong Docker (`docker/jetson/Dockerfile`, Debian bookworm: Python 3.11, glibc 2.36, PyQt5 từ apt vì PyPI không có wheel aarch64; JetPack 4.6 chỉ có Python 3.6/glibc 2.27), chỉ CPU với bộ phát hiện ONNX/OpenVINO, không cài torch/qrdet: `qr/detector.py` nạp torch/qrdet trong try, thiếu thì chỉ `QRDetector()` báo ImportError (`tests/test_no_torch.py`). OpenCV bản headless (bản thường xung đột plugin xcb với PyQt5). `libMVSDK.so` arm64 chỉ cần khi dùng camera MindVision, chép vào `docker/jetson/lib/` (gitignore). `docker/jetson/run.sh` gắn repo vào `/app`, `--privileged --network host`, X11. Chưa chạy thử trên Jetson thật.
 
 ## Ràng buộc
 
@@ -106,4 +106,4 @@ Chạy trong Docker (`docker/jetson/Dockerfile`, Debian bookworm: Python 3.11, g
 - Đầu vào QR luôn là BGR `np.ndarray` contiguous (OpenCV).
 - `CameraManager` là boundary tương thích của UI; giữ API public khi thay đổi backend.
 - `torch`/`qr` phải được import trước PyQt5 để tránh `WinError 1114` trên Windows.
-- `mvsdk.py` được vendor trong repo; không import động từ thư mục SDK.
+- `mvsdk.py` được vendor trong repo; không import động từ thư mục SDK. Sửa duy nhất so với mẫu SDK: `_Init` bắt OSError khi thiếu thư viện (`_MissingSdk`).

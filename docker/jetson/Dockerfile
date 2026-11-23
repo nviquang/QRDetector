@@ -21,7 +21,7 @@ ENV PATH=/opt/venv/bin:$PATH
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
-# MindVision Linux SDK (arm64): app luôn nạp mvsdk -> libMVSDK.so, kể cả bản Basler
+# Tùy chọn: libMVSDK.so arm64 nếu dùng camera MindVision; chỉ dùng Basler thì thư mục lib/ để trống
 COPY lib/ /usr/local/lib/
 RUN ldconfig
 

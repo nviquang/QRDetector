@@ -164,7 +164,7 @@ Cùng một mã trong 30 giây chỉ hiện một dòng (ghi `A`, `B` hoặc `A+
 
 ## Bản demo dùng camera Basler
 
-Cùng giao diện với bản demo bên dưới, dùng camera Basler (viết cho `a2A2840-48umBAS`) qua `pypylon`. Cần cài pylon của Basler (có driver USB) và cắm camera vào cổng USB 3, không qua hub. Giao diện vẫn nạp `mvsdk` nên máy cũng cần DLL MindVision.
+Cùng giao diện với bản demo bên dưới, dùng camera Basler (viết cho `a2A2840-48umBAS`) qua `pypylon`. Cần cài pylon của Basler (có driver USB) và cắm camera vào cổng USB 3, không qua hub. Không cần MindVision SDK: thiếu DLL thì `mvsdk` vẫn import được, chỉ camera MindVision không dùng được.
 
 ```bash
 python main_basler.py
@@ -208,7 +208,7 @@ Thiếu `openvino` thì tự lùi sang ONNX Runtime, rồi qrdet, và ghi cảnh
 
 ## Bản phát lại dữ liệu đã ghi
 
-Chạy đúng luồng của `main_basler.py` (giao diện, đọc nhiều frame, đọc nền B/C, bảng kết quả) trên các lần ghi trong `data/field/raw` thay cho camera. Không cần camera hay pylon; vẫn cần DLL MindVision như bản demo.
+Chạy đúng luồng của `main_basler.py` (giao diện, đọc nhiều frame, đọc nền B/C, bảng kết quả) trên các lần ghi trong `data/field/raw` thay cho camera. Không cần camera, pylon hay MindVision SDK.
 
 ```bash
 python main_replay.py

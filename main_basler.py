@@ -33,8 +33,7 @@ try:
 except (ImportError, FileNotFoundError, OSError) as e:
     _fail(
         "Không khởi tạo được ứng dụng.\n"
-        "Kiểm tra: đã cài pypylon và pylon (pip install -r requirements.txt, bộ cài pylon của Basler);\n"
-        "giao diện demo hiện vẫn nạp mvsdk nên máy cũng cần MindVision SDK (MVCAMSDK_X64.dll).\n"
+        "Kiểm tra: đã cài pypylon và pylon (pip install -r requirements.txt, bộ cài pylon của Basler).\n"
         f"Chi tiết: {e}"
     )
 

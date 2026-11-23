@@ -16,13 +16,28 @@ def _Init():
     is_win = (platform.system() == "Windows")
     is_x86 = (platform.architecture()[0] == '32bit')
 
-    if is_win:
-        _sdk = windll.MVCAMSDK if is_x86 else windll.MVCAMSDK_X64
-        CALLBACK_FUNC_TYPE = WINFUNCTYPE
-    else:
-        _sdk = cdll.LoadLibrary("libMVSDK.so")
-        CALLBACK_FUNC_TYPE = CFUNCTYPE
+    global AVAILABLE, LOAD_ERROR
+    CALLBACK_FUNC_TYPE = WINFUNCTYPE if is_win else CFUNCTYPE
+    try:
+        if is_win:
+            _sdk = windll.MVCAMSDK if is_x86 else windll.MVCAMSDK_X64
+        else:
+            _sdk = cdll.LoadLibrary("libMVSDK.so")
+    except OSError as e:
+        # QRDetector: máy chỉ dùng camera Basler (Jetson Nano) không cài MindVision SDK. Vẫn import được module;
+        # gọi hàm SDK nào cũng báo OSError rõ ràng thay vì làm cả app không mở.
+        AVAILABLE, LOAD_ERROR = False, e
+        _sdk = _MissingSdk(e)
 
+class _MissingSdk(object):
+    def __init__(self, error):
+        self._error = error
+    def __getattr__(self, name):
+        raise OSError("Chưa cài MindVision SDK (MVCAMSDK_X64.dll / libMVSDK.so), không gọi được %s: %s"
+                      % (name, self._error))
+
+AVAILABLE = True     # False khi không nạp được thư viện SDK
+LOAD_ERROR = None
 _Init()
 
 #-------------------------------------------Type Definitions--------------------------------------------------

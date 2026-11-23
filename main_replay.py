@@ -43,8 +43,7 @@ try:
 except (ImportError, FileNotFoundError, OSError) as e:
     _fail(
         "Không khởi tạo được ứng dụng.\n"
-        "Kiểm tra: đã cài thư viện (pip install -r requirements.txt); giao diện demo hiện vẫn nạp mvsdk nên máy "
-        "cần MindVision SDK (MVCAMSDK_X64.dll).\n"
+        "Kiểm tra: đã cài thư viện (pip install -r requirements.txt).\n"
         f"Chi tiết: {e}"
     )
 

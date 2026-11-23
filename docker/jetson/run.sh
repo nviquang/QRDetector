@@ -10,6 +10,6 @@ xhost +local:root >/dev/null 2>&1 || true     # cho container (root) mở cửa 
 exec docker run --rm -it --privileged --network host --ipc host \
     -e DISPLAY="${DISPLAY:-:0}" -e QT_X11_NO_MITSHM=1 \
     -e QR_DETECTOR -e QR_DETECT_SCALE -e QR_DETECT_THREADS -e QR_FALLBACK \
-    -v /tmp/.X11-unix:/tmp/.X11-unix -v /dev:/dev \
+    -v /tmp/.X11-unix:/tmp/.X11-unix -v /dev:/dev -v /etc/localtime:/etc/localtime:ro \
     -v "$PWD":/app -w /app \
     qrdetector-jetson python3 "$@"
