@@ -1,0 +1,11 @@
+# Jetson Nano (aarch64, chỉ CPU) — cài trong image docker/jetson/Dockerfile (Debian bookworm, Python 3.11).
+# Khác requirements.txt: không torch/torchvision/qrdet (bộ phát hiện ONNX/OpenVINO không cần), OpenCV bản headless
+# (bản thường mang Qt riêng, xung đột plugin xcb với PyQt5), PyQt5 lấy từ apt vì PyPI không có wheel aarch64.
+numpy==2.4.6
+opencv-contrib-python-headless==5.0.0.93
+pyzbar==0.1.9
+zxing-cpp==3.1.0
+pypylon==26.9
+scipy==1.17.1
+onnxruntime==1.32.0
+openvino==2026.4.1

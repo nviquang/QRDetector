@@ -96,6 +96,10 @@ Test: `tests/test_replay_manager.py` (TIFF tạm + `os.utime`), `tests/test_repl
 
 `demo_ui/dual_window.py`: mỗi camera một `_Channel` (manager, `RunController`, `CameraPanel`, luồng đóng riêng); trạng thái chung `overall_state` chỉ để hiển thị, camera lỗi không dừng camera kia. `demo_ui/dual_worker.py`: MỘT thread decode luân phiên, `PassReader` riêng từng camera — không chạy hai thread vì chung GPU và `qr/decoder.py` giữ detector WeChat toàn cục không khóa. `demo_ui/merged_stats.py` (thuần Python): cùng mã trong 30 giây kể từ lần đầu là một dòng (`A`/`B`/`A+B`); lượt không đọc được không ghép được với camera kia nên tỉ lệ đọc chỉ theo từng camera; khóa lượt là `(camera, track_id)` vì track_id hai camera trùng nhau. `demo_ui/dual_workspace.py` kế thừa `Workspace` qua `_build_video_area`. Cấu hình `DualSettings` (`config/dual_settings.json`): bản ghi `a`, `b`, phần dùng chung lưu ở `a`. Test: `tests/test_dual_app.py`.
 
+## Jetson Nano (`docs/jetson-nano.md`)
+
+Chạy trong Docker (`docker/jetson/Dockerfile`, Debian bookworm: Python 3.11, glibc 2.36, PyQt5 từ apt vì PyPI không có wheel aarch64; JetPack 4.6 chỉ có Python 3.6/glibc 2.27), chỉ CPU với bộ phát hiện ONNX/OpenVINO, không cài torch/qrdet: `qr/detector.py` nạp torch/qrdet trong try, thiếu thì chỉ `QRDetector()` báo ImportError (`tests/test_no_torch.py`). OpenCV bản headless (bản thường xung đột plugin xcb với PyQt5). `libMVSDK.so` arm64 chép vào `docker/jetson/lib/` (gitignore) vì `mvsdk` luôn được nạp. `docker/jetson/run.sh` gắn repo vào `/app`, `--privileged --network host`, X11. Chưa chạy thử trên Jetson thật.
+
 ## Ràng buộc
 
 - Không thêm `basicsr`/`realesrgan`.

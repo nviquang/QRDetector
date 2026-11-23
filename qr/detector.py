@@ -5,10 +5,18 @@ from __future__ import annotations
 import logging
 
 import numpy as np
-import torch
-from qrdet import QRDetector as _QRDetector
-# qrdet.detect() không cho chỉnh imgsz → gọi thẳng model YOLO và dùng lại helper của qrdet
-from qrdet.qrdet import _prepare_input, _yolo_v8_results_to_dict
+
+# torch/qrdet là tùy chọn: máy chỉ dùng bộ phát hiện ONNX/OpenVINO (Jetson Nano, docs/jetson-nano.md) không cài
+# hai gói này. Khi đó vẫn import được gói qr; chỉ tạo QRDetector (QR_DETECTOR=qrdet) mới báo lỗi.
+try:
+    import torch
+    from qrdet import QRDetector as _QRDetector
+    # qrdet.detect() không cho chỉnh imgsz → gọi thẳng model YOLO và dùng lại helper của qrdet
+    from qrdet.qrdet import _prepare_input, _yolo_v8_results_to_dict
+    _IMPORT_ERROR = None
+except (ImportError, OSError) as _e:
+    torch = _QRDetector = _prepare_input = _yolo_v8_results_to_dict = None
+    _IMPORT_ERROR = _e
 
 from .detection import Detection  # noqa: F401  (giữ đường import cũ qr.detector.Detection)
 
@@ -39,6 +47,9 @@ class QRDetector:
         device: "auto" (GPU nếu có), "cpu" hoặc "cuda:N".
         half:   FP16 — chỉ có tác dụng trên GPU; tắt mặc định vì GTX 16xx từng lỗi FP16.
         """
+        if _IMPORT_ERROR is not None:
+            raise ImportError(f"Bộ phát hiện qrdet cần torch và qrdet ({_IMPORT_ERROR}); "
+                              "dùng QR_DETECTOR=openvino|onnx hoặc cài requirements.txt")
         self._detector = _QRDetector(model_size=model_size, conf_th=conf_th)
         self._conf_th = conf_th
         self._imgsz = imgsz

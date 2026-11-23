@@ -80,6 +80,8 @@ qr.save("tem.png", scale=10, border=4)
 | Runtime DLL | `MVCAMSDK_X64.dll` với Python 64-bit (`MVCAMSDK.dll` với Python 32-bit) |
 | Camera      | Camera đã hoạt động với app ChinaVision đi kèm bộ cài                   |
 
+**Jetson Nano 4GB:** chạy trong Docker, chỉ CPU, không cần torch — xem [docs/jetson-nano.md](docs/jetson-nano.md).
+
 Tài liệu này gọi SDK là "MindVision" theo API `mvsdk` / `Camera*`, nhưng bản đang dùng được cài từ bộ cài ChinaVision vào `C:\Program Files (x86)\ChinaVision`. DLL có trong `C:\Windows\System32` (64-bit) và `C:\Windows\SysWOW64` (32-bit), trùng với bản trong thư mục `SDK\` của ChinaVision, nên gỡ ChinaVision có thể làm app không mở được camera.
 
 **Không nhầm với MVS của Hikrobot:** MVS là SDK của hãng khác (`MvCameraControl`), không cung cấp `MVCAMSDK_X64.dll` và app này không dùng.

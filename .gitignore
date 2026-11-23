@@ -38,3 +38,6 @@ data/
 # Checkpoint trung gian của tools/export_qrdet_detect.py (chỉ commit bản ONNX)
 qr/models/*.pt
 qr/models/qrdet_n_seg.onnx
+
+# Thư viện MindVision chép vào khi build image Jetson
+docker/jetson/lib/*.so*
