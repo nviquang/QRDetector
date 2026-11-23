@@ -43,9 +43,21 @@ class LoadApiConfigTests(unittest.TestCase):
         self.assertEqual(missing, ["BASE_URL", "API_KEY"])
 
     def test_repr_hides_secrets(self):
-        text = repr(ApiConfig("https://x.test", "s3cret", "k3y"))
+        text = repr(ApiConfig("https://x.test", "s3cret", "k3y", basic_user="u", basic_password="pa55"))
         self.assertNotIn("s3cret", text)
         self.assertNotIn("k3y", text)
+        self.assertNotIn("pa55", text)
+
+    def test_optional_basic_auth_keys(self):
+        path = self.env_file("BASE_URL=https://x.test\nAPP_TOKEN_SECRET=s\nAPI_KEY=k\n"
+                             "BASIC_AUTH_USER=u\nBASIC_AUTH_PASSWORD=p\n")
+        config, missing = load_api_config(path, environ={})
+        self.assertEqual((config.basic_user, config.basic_password, missing), ("u", "p", []))
+
+    def test_basic_auth_keys_not_required(self):
+        path = self.env_file("BASE_URL=https://x.test\nAPP_TOKEN_SECRET=s\nAPI_KEY=k\n")
+        config, missing = load_api_config(path, environ={})
+        self.assertEqual((config.basic_user, config.basic_password, missing), ("", "", []))
 
 
 if __name__ == "__main__":

@@ -34,7 +34,7 @@ from ui.main_window import draw_overlays, frame_to_qimage
 from .app_settings import AppSettings
 from .run_controller import RunController, RunState, StartRequest
 from .api_config import load_api_config
-from .scan_uploader import ReportClient, ScanUploader
+from .scan_uploader import ReportClient, ScanUploader, api_missing_text, upload_error_text
 from .session_stats import SessionStats, age_text
 from .settings_window import TAB_CONNECTION, TAB_TITLES, SettingsWindow
 from .tray import TrayController
@@ -135,7 +135,8 @@ class MainWindow(QMainWindow):
                  tray: TrayController | bool = False):
         """settings_path: file JSON lưu cấu hình; None = không đọc/ghi file (dùng trong test).
 
-        uploader: None + có settings_path → tạo ScanUploader thật; test truyền bản giả.
+        uploader: None + có settings_path → tạo ScanUploader gửi API báo cáo tấm theo .env (thiếu biến thì
+            không tạo và khóa ô Gửi mã lên server); test truyền bản giả.
         camera: backend cùng API CameraManager mà demo dùng; None = MindVision.
         settings_cls: lớp cấu hình, quyết định giá trị mặc định theo camera.
         tray: True = nút Chạy nền + icon khay hệ thống (máy không có khay thì bỏ qua);
@@ -280,6 +281,11 @@ class MainWindow(QMainWindow):
             self.cbx_gpu.setToolTip("Không có GPU CUDA trên máy này — nhận diện chạy bằng CPU.")
         self.cbx_upload.setChecked(s.upload_enabled)
         self.on_upload_toggled(s.upload_enabled)
+        if self.api_missing:                      # giữ lựa chọn đã lưu, chỉ khóa ô
+            message = api_missing_text(self.api_missing)
+            self.cbx_upload.setEnabled(False)
+            self.cbx_upload.setToolTip(message)
+            self.ui.status_bar.setText(message)
         self.spin_exposure.setValue(s.exposure_ms)
         self.spin_gain.setValue(s.analog_gain)
         self.cbx_conveyor_band.setChecked(s.band_enabled)
@@ -769,8 +775,7 @@ class MainWindow(QMainWindow):
     def on_upload_status(self, status):
         """Chỉ báo khi có chuyện đáng chú ý: lỗi gửi (thành công là việc bình thường)."""
         if status.last_ok is False:
-            self.ui.status_bar.setText("Gửi mã {} lên server lỗi ({} mã chờ)".format(
-                status.last_text, status.pending))
+            self.ui.status_bar.setText(upload_error_text(status))
 
     def on_decode_failed(self, msg):
         self.ui.status_bar.setText("Decode lỗi: {}".format(msg[:100]))

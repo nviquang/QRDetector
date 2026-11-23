@@ -10,6 +10,7 @@ Chống gửi trùng: mã đã chờ hoặc đã gửi thành công trong ``dedu
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import json
@@ -27,6 +28,7 @@ logger = logging.getLogger("solution.upload")
 
 REPORT_PATH = "/api/v1/production/camera/product-item-reports"
 INVALID_TOKEN = "invalid X-App-Token"
+USER_AGENT = "QRDetector-camera/1.0"            # Cloudflare chặn UA mặc định Python-urllib (error 1010)
 
 
 class TransientError(Exception):
@@ -45,6 +47,14 @@ class UploadStatus:
     last_text: str | None = None
     last_ok: bool | None = None
     last_error: str | None = None
+
+
+def api_missing_text(missing: list[str]) -> str:
+    return "Chưa cấu hình API trong .env: thiếu " + ", ".join(missing)
+
+
+def upload_error_text(status: UploadStatus) -> str:
+    return "Gửi mã {} lỗi: {} ({} mã chờ)".format(status.last_text, status.last_error or "không rõ", status.pending)
 
 
 def make_app_token(secret: str, method: str, path: str, now_ms: int) -> str:
@@ -71,14 +81,20 @@ class ReportClient:
         self._timeout = timeout
         self._now_ms = now_ms
         self._opener = opener
+        self._authorization = None
+        if config.basic_user or config.basic_password:
+            pair = "{}:{}".format(config.basic_user, config.basic_password).encode("utf-8")
+            self._authorization = "Basic " + base64.b64encode(pair).decode("ascii")
 
     def __call__(self, code: str) -> str:
+        headers = {"Content-Type": "application/json", "User-Agent": USER_AGENT,
+                   "X-App-Token": make_app_token(self._config.app_secret, "POST", REPORT_PATH, self._now_ms()),
+                   "X-Api-Key": self._config.api_key}
+        if self._authorization is not None:
+            headers["Authorization"] = self._authorization
         request = urllib.request.Request(
             self._url, method="POST",
-            data=json.dumps({"productItemCode": code}, ensure_ascii=False).encode("utf-8"),
-            headers={"Content-Type": "application/json",
-                     "X-App-Token": make_app_token(self._config.app_secret, "POST", REPORT_PATH, self._now_ms()),
-                     "X-Api-Key": self._config.api_key})
+            data=json.dumps({"productItemCode": code}, ensure_ascii=False).encode("utf-8"), headers=headers)
         try:
             with self._opener(request, timeout=self._timeout) as response:
                 body = response.read()
@@ -88,6 +104,10 @@ class ReportClient:
                 raise TransientError(message) from exc
             if exc.code == 403 and message == INVALID_TOKEN:
                 message += " — kiểm tra giờ máy"
+            challenge = (exc.headers.get("WWW-Authenticate") if exc.headers is not None else None) or ""
+            if exc.code == 401 and challenge.lower().startswith("basic"):
+                message = ("Server đòi đăng nhập HTTP Basic: đặt BASIC_AUTH_USER, BASIC_AUTH_PASSWORD trong .env"
+                           if self._authorization is None else "Sai BASIC_AUTH_USER / BASIC_AUTH_PASSWORD")
             raise PermanentError(message) from exc
         except (urllib.error.URLError, OSError) as exc:      # mất mạng, timeout
             raise TransientError(str(getattr(exc, "reason", exc))) from exc

@@ -1,6 +1,7 @@
 """Cấu hình gọi API báo cáo tấm (``docs/camera-integration.md``) — thuần Python, không Qt.
 
-Đọc ``BASE_URL``, ``APP_TOKEN_SECRET``, ``API_KEY`` từ file ``.env`` ở gốc repo; biến môi trường của tiến trình
+Đọc ``BASE_URL``, ``APP_TOKEN_SECRET``, ``API_KEY`` (bắt buộc) và ``BASIC_AUTH_USER``, ``BASIC_AUTH_PASSWORD``
+(tùy chọn, khi host đặt sau HTTP Basic auth như môi trường dev) từ file ``.env`` ở gốc repo; biến môi trường của tiến trình
 (khác rỗng) ghi đè giá trị trong file. Không dùng python-dotenv: chỉ cần dạng ``KEY=VALUE`` đơn giản.
 """
 
@@ -14,6 +15,7 @@ from typing import Mapping
 ROOT = Path(__file__).resolve().parents[1]
 ENV_PATH = ROOT / ".env"
 REQUIRED_KEYS = ("BASE_URL", "APP_TOKEN_SECRET", "API_KEY")
+OPTIONAL_KEYS = ("BASIC_AUTH_USER", "BASIC_AUTH_PASSWORD")
 
 
 @dataclass(frozen=True)
@@ -21,6 +23,8 @@ class ApiConfig:
     base_url: str
     app_secret: str = field(repr=False)     # không lộ secret khi log/in đối tượng
     api_key: str = field(repr=False)
+    basic_user: str = ""
+    basic_password: str = field(default="", repr=False)
 
 
 def read_env_file(path: Path) -> dict[str, str]:
@@ -48,10 +52,11 @@ def load_api_config(path: Path = ENV_PATH,
                     environ: Mapping[str, str] = os.environ) -> tuple[ApiConfig | None, list[str]]:
     """(cấu hình, []) khi đủ; (None, tên các biến thiếu) khi thiếu, rỗng hoặc BASE_URL không phải http(s)."""
     file_values = read_env_file(path)
-    values = {key: environ.get(key) or file_values.get(key, "") for key in REQUIRED_KEYS}
+    values = {key: environ.get(key) or file_values.get(key, "") for key in REQUIRED_KEYS + OPTIONAL_KEYS}
     missing = [key for key in REQUIRED_KEYS if not values[key]]
     if values["BASE_URL"] and not values["BASE_URL"].startswith(("http://", "https://")):
         missing.insert(0, "BASE_URL")
     if missing:
         return None, missing
-    return ApiConfig(values["BASE_URL"], values["APP_TOKEN_SECRET"], values["API_KEY"]), []
+    return ApiConfig(values["BASE_URL"], values["APP_TOKEN_SECRET"], values["API_KEY"],
+                     values["BASIC_AUTH_USER"], values["BASIC_AUTH_PASSWORD"]), []

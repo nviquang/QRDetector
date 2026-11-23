@@ -28,6 +28,7 @@ from demo_ui.merged_stats import MergedStats  # noqa: E402
 from demo_ui.run_controller import RunState  # noqa: E402
 from demo_ui.session_stats import RowState  # noqa: E402
 from demo_ui.dual_worker import DualDecodeWorker  # noqa: E402
+from demo_ui.scan_uploader import UploadStatus  # noqa: E402
 from tests.qr_fixtures import detection_at  # noqa: E402
 
 with unittest.mock.patch.dict(sys.modules, {"mvsdk": fake.sdk, "camera.camera_manager": fake.manager_module}):
@@ -493,6 +494,25 @@ class DualWindowTests(unittest.TestCase):
         window = self.make()
         window.cbx_upload.setChecked(False)
         self.assertIs(self.uploader.enabled, False)
+
+    def test_missing_env_disables_upload_switch(self):
+        self.a, self.b = FakeManager("A1", 1), FakeManager("B1", 2)
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        with patch.object(window_module, "ScanUploader") as uploader_cls,                 patch.object(window_module, "load_api_config", return_value=(None, ["BASE_URL", "API_KEY"])):
+            self.window = window_module.DualWindow(settings_path=Path(folder.name) / "dual.json",
+                                                   cameras=(self.a, self.b), pipeline=FakePipeline())
+        self.addCleanup(self.shutdown)
+        uploader_cls.assert_not_called()
+        self.assertIsNone(self.window.uploader)
+        self.assertFalse(self.window.cbx_upload.isEnabled())
+        self.assertIn("BASE_URL, API_KEY", self.window.cbx_upload.toolTip())
+        self.assertIn("API_KEY", self.window.lbl_common.text())
+
+    def test_upload_error_shows_server_message(self):
+        window = self.make()
+        window.on_upload_status(UploadStatus(1, 0, 1, "A", False, "Không tìm thấy tấm"))
+        self.assertIn("Không tìm thấy tấm", window.lbl_common.text())
 
 
 class DualSettingsTests(unittest.TestCase):

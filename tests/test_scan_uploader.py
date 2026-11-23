@@ -188,8 +188,9 @@ class FakeResponse:
 class FakeOpener:
     """Ghi lại (Request, timeout); trả body 200 hoặc ném HTTPError/URLError đã cài."""
 
-    def __init__(self, status=200, body=b'{"status":"REPORTED","warning":""}', exc=None):
+    def __init__(self, status=200, body=b'{"status":"REPORTED","warning":""}', exc=None, headers=None):
         self.status, self.body, self.exc = status, body, exc
+        self.headers = headers or {}
         self.calls = []
 
     def __call__(self, request, timeout=None):
@@ -197,7 +198,7 @@ class FakeOpener:
         if self.exc is not None:
             raise self.exc
         if self.status != 200:
-            raise urllib.error.HTTPError(request.full_url, self.status, "err", {}, io.BytesIO(self.body))
+            raise urllib.error.HTTPError(request.full_url, self.status, "err", self.headers, io.BytesIO(self.body))
         return FakeResponse(self.body)
 
 
@@ -257,6 +258,28 @@ class ReportClientTests(unittest.TestCase):
         with self.assertRaises(TransientError) as ctx:
             client(FakeOpener(502, b"<html>"))("A")
         self.assertEqual(str(ctx.exception), "HTTP 502")
+
+    def test_sends_custom_user_agent(self):
+        opener = FakeOpener()
+        client(opener)("A")
+        self.assertTrue(opener.calls[0][0].get_header("User-agent").startswith("QRDetector"))
+
+    def test_no_authorization_header_by_default(self):
+        opener = FakeOpener()
+        client(opener)("A")
+        self.assertIsNone(opener.calls[0][0].get_header("Authorization"))
+
+    def test_basic_auth_header_when_configured(self):
+        opener = FakeOpener()
+        client(opener, ApiConfig("https://x.test", "s", "k", basic_user="u", basic_password="p"))("A")
+        self.assertEqual(opener.calls[0][0].get_header("Authorization"), "Basic dTpw")
+
+    def test_basic_auth_challenge_message(self):
+        opener = FakeOpener(401, b"<html>401 Authorization Required</html>",
+                            headers={"WWW-Authenticate": 'Basic realm="Dev Environment"'})
+        with self.assertRaises(PermanentError) as ctx:
+            client(opener)("A")
+        self.assertIn("BASIC_AUTH_USER", str(ctx.exception))
 
     def test_token_recomputed_each_call(self):
         times = iter([60000, 120000])

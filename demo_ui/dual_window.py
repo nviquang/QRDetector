@@ -34,7 +34,7 @@ from .dual_workspace import DualWorkspace
 from .merged_stats import MergedStats
 from .run_controller import RunController, RunState, StartRequest
 from .api_config import load_api_config
-from .scan_uploader import ReportClient, ScanUploader
+from .scan_uploader import ReportClient, ScanUploader, api_missing_text, upload_error_text
 from .session_stats import age_text
 from .settings_window import _page
 
@@ -308,6 +308,11 @@ class DualWindow(QMainWindow):
         self.cbx_gpu.setEnabled(gpu_available)
         self.cbx_upload.setChecked(common.upload_enabled)
         self.on_upload_toggled(common.upload_enabled)
+        if self.api_missing:                      # giữ lựa chọn đã lưu, chỉ khóa ô
+            message = api_missing_text(self.api_missing)
+            self.cbx_upload.setEnabled(False)
+            self.cbx_upload.setToolTip(message)
+            self.lbl_common.setText(message)
         for ch in self.channels:
             ch.panel.load(ch.settings)
         self._settings_timer = QTimer(self)
@@ -648,7 +653,7 @@ class DualWindow(QMainWindow):
 
     def on_upload_status(self, status):
         if status.last_ok is False:
-            self.lbl_common.setText("Gửi mã {} lên server lỗi ({} mã chờ)".format(status.last_text, status.pending))
+            self.lbl_common.setText(upload_error_text(status))
 
     def on_decode_failed(self, cam: int, msg: str):
         self.channels[cam].panel.lbl_status.setText("Decode lỗi: {}".format(msg[:100]))

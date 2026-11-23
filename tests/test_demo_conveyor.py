@@ -21,7 +21,7 @@ from dataclasses import asdict  # noqa: E402
 
 from demo_ui.api_config import ApiConfig  # noqa: E402
 from demo_ui.app_settings import AppSettings, BaslerSettings  # noqa: E402
-from demo_ui.scan_uploader import ScanUploader  # noqa: E402
+from demo_ui.scan_uploader import ScanUploader, UploadStatus  # noqa: E402
 
 
 class FrameSpeed:
@@ -340,6 +340,26 @@ class UploadSwitchTests(unittest.TestCase):
         uploader_cls.return_value.set_enabled.assert_called_with(False)
         window.cbx_upload.setChecked(True)
         uploader_cls.return_value.set_enabled.assert_called_with(True)
+
+    def test_missing_env_disables_upload_switch(self):
+        with unittest.mock.patch.object(window_module, "ScanUploader") as uploader_cls,                 unittest.mock.patch.object(window_module, "load_api_config", return_value=(None, ["API_KEY"])):
+            window = window_module.MainWindow(settings_path=self._saved_off())
+            window.display_timer.stop()
+            window.fps_timer.stop()
+            window.worker.stop()
+            self.addCleanup(window.close)
+        uploader_cls.assert_not_called()
+        self.assertIsNone(window.uploader)
+        self.assertFalse(window.cbx_upload.isEnabled())
+        self.assertIn("API_KEY", window.cbx_upload.toolTip())
+        self.assertIn("API_KEY", window.ui.status_bar.text())
+        with unittest.mock.patch.object(window.stats, "on_reads", return_value=[]):
+            window.on_reads_done([types.SimpleNamespace(text="A")])
+
+    def test_upload_error_shows_server_message(self):
+        window = self.make()
+        window.on_upload_status(UploadStatus(1, 0, 1, "A", False, "Không tìm thấy tấm"))
+        self.assertIn("Không tìm thấy tấm", window.ui.status_bar.text())
 
     def _saved_off(self):
         tmp = tempfile.TemporaryDirectory()
